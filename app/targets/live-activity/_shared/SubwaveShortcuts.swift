@@ -45,6 +45,26 @@ struct SubwaveShortcuts: AppShortcutsProvider {
       shortTitle: "Request a song",
       systemImageName: "music.note"
     )
+    AppShortcut(
+      intent: WhatsPlayingIntent(),
+      phrases: [
+        "What's playing on \(.applicationName)",
+        "What's on \(.applicationName)",
+        "What song is this on \(.applicationName)",
+      ],
+      shortTitle: "What's playing",
+      systemImageName: "waveform"
+    )
+    AppShortcut(
+      intent: LikeSongIntent(),
+      phrases: [
+        "Like this song on \(.applicationName)",
+        "Like this track on \(.applicationName)",
+        "Heart this song on \(.applicationName)",
+      ],
+      shortTitle: "Like this song",
+      systemImageName: "heart"
+    )
   }
 }
 

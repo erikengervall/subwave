@@ -4,6 +4,7 @@
 // screen mounts.
 
 import { setIntentHandler } from '../../modules/app-intents';
+import { likeHeardTrack, whatsPlaying } from './on-air';
 import { askForSong } from './request-reply';
 import { activeStation, NO_STATION_MESSAGE } from './station';
 import { tuneIn, tuneOut } from './tune';
@@ -15,10 +16,14 @@ export function registerIntentHandlers(): void {
         return tuneIn();
       case 'tuneOut':
         return tuneOut();
-      case 'request': {
+      case 'request':
+      case 'nowPlaying':
+      case 'like': {
         const station = await activeStation();
         if (!station) return { ok: false, message: NO_STATION_MESSAGE };
-        return askForSong(args.text ?? '', { api: station.api });
+        if (action === 'request') return askForSong(args.text ?? '', { api: station.api });
+        if (action === 'nowPlaying') return whatsPlaying(station);
+        return likeHeardTrack(station);
       }
       default:
         return { ok: false, message: 'Update SUB/WAVE to use this.' };

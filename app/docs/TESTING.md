@@ -318,7 +318,14 @@ a toggle for Control Center, the Lock Screen and the Action button, driven by
 `ToggleTuneIntent` through the same bridge. **Request a song** ("Request a song
 on SUB/WAVE") has Siri ask what to play, sends it through the request drawer's
 own `POST /request` and polling, and reads back the DJ's answer. It waits up to
-10 s for the match, then says the request is in.
+10 s for the match, then says the request is in. **What's playing** and **Like
+this song** both mean the track the listener is hearing: while the app is
+playing, that is the previous track for the stream buffer's length after a
+change (`src/lib/heard-track.ts`, the rule `useStationFeed` promotes tracks by).
+The like goes through `POST /like`, which refuses a song that has ended, and
+the in-app heart and the Live Activity fill straight away (`like-events.ts`).
+The Live Activity's own heart is `LikeTrackIntent`, hidden from Shortcuts so
+there is one "like" action there.
 
 The intents are thin. Each hands its action to JS and waits for the answer:
 
@@ -376,10 +383,15 @@ the shipped app does. Kill the app, run **Tune in** from the Shortcuts app, and
 confirm audio starts with the app still in the background; then open the app
 and check the transport shows it as on air.
 
-Test **Request a song** against a local stand-in, never a live station: a test
-request really queues, and the DJ may announce it. Any server answering
-`/api/health`, `POST /api/request` and `GET /api/request/:id` will do; add it in
-onboarding as `http://localhost:<port>`.
+Test **Request a song** and **Like this song** against a local stand-in, never
+a live station: a test request really queues and the DJ may announce it, and a
+like stars the song in the station's Navidrome. Any server answering
+`/api/health`, `POST /api/request`, `GET /api/request/:id`, `/api/now-playing`,
+`/api/state` and `POST /api/like` will do; add it in onboarding as
+`http://localhost:<port>`. **What's playing** only reads, so a live station is
+fine, and the place to check the lag: tune in, wait for `/api/now-playing` to
+change, and ask at once; it should name the previous track. Keep test files
+out of `ios/build/`, which `expo prebuild` wipes.
 
 
 ---
