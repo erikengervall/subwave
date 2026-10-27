@@ -30,6 +30,7 @@ interface Subscription {
 interface NativeAppIntents {
   reply(token: string, ok: boolean, message: string | null): void;
   setOnAir(onAir: boolean): void;
+  setStationName(name: string | null): void;
   addListener(event: 'onIntent', fn: (request: IntentRequest) => void): Subscription;
 }
 
@@ -51,6 +52,16 @@ export function setOnAir(onAir: boolean): void {
     native?.setOnAir(onAir);
   } catch {
     /* a binary older than the control */
+  }
+}
+
+/** The active station's name, which Siri says when it plays it on iOS 27
+ *  ("play SUB/WAVE"). Swift cannot read the station store, so it reads this. */
+export function setStationName(name: string | null): void {
+  try {
+    native?.setStationName(name);
+  } catch {
+    /* a binary older than the iOS 27 Siri support */
   }
 }
 

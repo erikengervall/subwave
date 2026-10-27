@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { setStationName } from '../../modules/app-intents';
 import { teardown } from '@/audio/player';
 import { createApi, type StationApi } from '@/lib/api';
 import {
@@ -166,6 +167,11 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
     if (!base) return null;
     return store.recents.find((r) => r.url === base)?.name ?? null;
   }, [base, store.recents]);
+
+  // Siri names the station it plays on iOS 27 and cannot read this store.
+  useEffect(() => {
+    if (ready) setStationName(name);
+  }, [ready, name]);
 
   const value = useMemo<StationContextValue>(
     () => ({

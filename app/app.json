@@ -85,7 +85,8 @@
             "usesCleartextTraffic": true
           },
           "ios": {
-            "deploymentTarget": "16.4"
+            "deploymentTarget": "16.4",
+            "enableSceneSupport": true
           }
         }
       ],
@@ -97,7 +98,6 @@
       ],
       "./plugins/withAndroidUserCaTrust",
       "./plugins/withGradleMemory",
-      "./plugins/withSceneLifecycle",
       [
         "expo-secure-store",
         {

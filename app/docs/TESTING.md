@@ -70,14 +70,17 @@ and progress must also be checked in the car.
 An app built with the **iOS 27 SDK** (Xcode 27) that has no scene manifest is
 killed at launch on iOS 27, in
 `_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`. The SDK 57
-template still starts React Native from the app delegate, so
-`plugins/withSceneLifecycle.js` does what the SDK 58 template does: a scene
-manifest, a `SceneDelegate` built on Expo's `ExpoAppSceneDelegate` (it creates
-the window, starts React Native and forwards URL and lifecycle events to the app
-delegate), and an app delegate that only creates the factory. The plugin fails
-the prebuild if `AppDelegate.swift` stops matching the template, rather than
-generate an app that starts React Native twice or not at all. Drop it with the
-SDK 58 upgrade.
+template still starts React Native from the app delegate, so `expo-build-properties`
+`ios.enableSceneSupport` (Expo's own SDK 57 opt-in, expo 57.0.23+) does what the
+SDK 58 template does: a scene manifest naming Expo's `ExpoAppSceneDelegate` (it
+creates the window, starts React Native and forwards URL and lifecycle events to
+the app delegate), and an app delegate that only creates the factory. Drop the
+option with the SDK 58 upgrade; it warns and does nothing there.
+
+EAS builds SDK 57 with **Xcode 26.6** (the `sdk-57` image) unless `eas.json`
+names another, so a default store build has none of the iOS 27-only code
+(`AudioSchemaIntents.swift`). Shipping that needs an Xcode 27 image
+(`macos-tahoe-26.6-xcode-27.1`, also `latest`).
 
 ### Other load-bearing facts
 
@@ -354,7 +357,7 @@ What is easy to get wrong:
   App Intents metadata is extracted per target, and an intent the system cannot
   find in the app does not exist to Siri or Shortcuts.
 - **A cold start depends on JS booting in the background.** The app uses the
-  UIScene life cycle (`plugins/withSceneLifecycle.js`), so React Native starts
+  UIScene life cycle (`ios.enableSceneSupport`), so React Native starts
   when a scene connects. iOS connects one for an intent launch even though the
   app is never shown, so JS boots (checked on iOS 18.5 and 27). If an intent
   ever times out cold, look there first.

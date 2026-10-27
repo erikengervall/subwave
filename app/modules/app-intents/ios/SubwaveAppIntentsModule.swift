@@ -28,6 +28,9 @@ private let replyName = Notification.Name("SubwaveIntentReply")
 private let appGroup = "group.com.getsubwave.app"
 private let onAirKey = "subwave.onAir"
 private let tuneControlKind = "com.getsubwave.app.tune"
+// The station Siri names on iOS 27 ("play SUB/WAVE" → "Playing <station>"),
+// read by LiveStationEntity (targets/live-activity/_shared/AudioSchemaIntents.swift).
+private let stationNameKey = "subwave.stationName"
 
 public class SubwaveAppIntentsModule: Module {
   private var requestObserver: NSObjectProtocol?
@@ -94,6 +97,17 @@ public class SubwaveAppIntentsModule: Module {
       defaults.set(onAir, forKey: onAirKey)
       if #available(iOS 18.0, *) {
         ControlCenter.shared.reloadControls(ofKind: tuneControlKind)
+      }
+    }
+
+    /// The active station's display name, for Siri, which cannot read the
+    /// app's station store. Nil clears it.
+    Function("setStationName") { (name: String?) in
+      let defaults = UserDefaults(suiteName: appGroup)
+      if let name, !name.isEmpty {
+        defaults?.set(name, forKey: stationNameKey)
+      } else {
+        defaults?.removeObject(forKey: stationNameKey)
       }
     }
   }
