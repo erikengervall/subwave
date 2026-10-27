@@ -10,6 +10,21 @@ import WidgetKit
 @main
 struct SubwaveWidgets: WidgetBundle {
   var body: some Widget {
-    SubwaveLiveActivity()
+    liveActivity
+  }
+
+  /// Exactly one configuration for SubwaveLiveAttributes: two registered for
+  /// the same attributes type leaves which one renders up to the system.
+  /// WidgetBundleBuilder only accepts a bare `if #available` (no else), so the
+  /// choice is made with explicit returns, each wrapped by the builder's own
+  /// functions so both branches are the same type.
+  private var liveActivity: some Widget {
+    if #available(iOS 18.0, *) {
+      return WidgetBundleBuilder.buildOptional(
+        WidgetBundleBuilder.buildLimitedAvailability(SubwaveLiveActivityWithSmall()))
+    } else {
+      return WidgetBundleBuilder.buildOptional(
+        WidgetBundleBuilder.buildLimitedAvailability(SubwaveLiveActivity()))
+    }
   }
 }

@@ -8,7 +8,13 @@ import {
   addAudioRouteChangeListener,
   ROUTE_REASON_OLD_DEVICE_UNAVAILABLE,
 } from '../../modules/airplay-route-picker';
-import { getLastLiveMeta, loadAndPlay, setupPlayer, teardown } from '@/audio/player';
+import {
+  getLastLiveMeta,
+  loadAndPlay,
+  onExternalTuneOut,
+  setupPlayer,
+  teardown,
+} from '@/audio/player';
 import type { StationApi } from '@/lib/api';
 import type { StreamFormat } from '@/lib/streamFormat';
 import { loadVolumePref, saveVolumePref } from '@/lib/volume';
@@ -217,6 +223,44 @@ export function usePlayer(
         if (tunedInRef.current) armWatchdog(nextRetryDelay());
       }
     },
+  );
+
+  // A tune-in that started before this hook mounted: an App Intent can launch
+  // the app into the background and start the stream (src/intents/tune.ts)
+  // while the screens are still loading, so the Playing event that would
+  // adopt it has already fired.
+  useEffect(() => {
+    let alive = true;
+    TrackPlayer.getPlaybackState()
+      .then(({ state }) => {
+        if (!alive || tunedInRef.current || !getLastLiveMeta()) return;
+        if (state !== State.Playing && state !== State.Buffering && state !== State.Loading) {
+          return;
+        }
+        tunedInRef.current = true;
+        setTunedIn(true);
+        setStatus(state === State.Playing ? 'playing' : 'connecting');
+        if (state !== State.Playing) armWatchdogRef.current(WATCHDOG_MS);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // An App Intent tune-out (src/intents/tune.ts): the same synchronous ref
+  // flip as the RemotePause handler above, ahead of the Stopped event.
+  useEffect(
+    () =>
+      onExternalTuneOut(() => {
+        clearWatchdog();
+        retryCount.current = 0;
+        bufferFlapsRef.current = [];
+        tunedInRef.current = false;
+        setTunedIn(false);
+        setStatus('idle');
+      }),
+    [clearWatchdog],
   );
 
   // iOS: an oldDeviceUnavailable route change (Bluetooth speaker off, CarPlay

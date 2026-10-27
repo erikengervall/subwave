@@ -25,6 +25,10 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
+        "INAlternativeAppNames": [
+          { "INAlternativeAppName": "Sub Wave" },
+          { "INAlternativeAppName": "Subwave" }
+        ],
         "NSLocalNetworkUsageDescription": "SUB/WAVE uses the local network to find Google Cast speakers and TVs on your Wi-Fi so you can send the station to them.",
         "UIBackgroundModes": [
           "audio"

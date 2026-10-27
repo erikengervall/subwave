@@ -223,7 +223,8 @@ stream in the phone app first, then connect the car. RNTP feeds the iOS surface
 - **iOS** — run on a device, or use the **CarPlay Simulator** (Simulator app →
   **I/O → External Displays → CarPlay**). Start the stream, open the CarPlay
   screen → SUB/WAVE shows under **Now Playing** with title/artist/album + artwork;
-  Play/Pause work; no scrubber (the `isLiveStream` track hides it).
+  Play/Pause work; no scrubber (the `isLiveStream` track hides it). On iOS 26+
+  the Live Activity's `.small` card also appears on the CarPlay Dashboard.
 
 > **Android Auto is intentionally not declared.** The earlier
 > `plugins/withAndroidAuto.js` declaration (#444) was **rejected by Google Play**
@@ -242,9 +243,17 @@ that drives ActivityKit, started and stopped by `src/hooks/useLiveActivity.ts`.
 
 The reason it exists is the **Apple Watch**: React Native does not run on watchOS,
 so a real watch app is a second, Swift-only codebase. iOS 18+ mirrors an iPhone
-Live Activity into the **watch Smart Stack** for free — the same lock-screen
-SwiftUI view, rendered on the wrist. One target, no watchOS project, no second
-release path.
+Live Activity into the **watch Smart Stack** for free, and iOS 26 puts it on the
+**CarPlay Dashboard** too, with no CarPlay entitlement. One target, no watchOS
+project, no second release path.
+
+Both of those surfaces draw the **`.small` activity family** (`SmallView`), not
+the lock-screen view. Without the opt-in they fall back to the Dynamic Island's
+compact views, an 18pt cover and a clock. The opt-in,
+`supplementalActivityFamilies([.small])`, is iOS 18 API on a 17.0 target, so it
+lives on its own widget (`SubwaveLiveActivityWithSmall`) and `index.swift`
+registers exactly one of the two. CarPlay renders Live Activities
+non-interactive, which is why `SmallView` has no heart.
 
 **The floor is iOS 17** (the widget target builds at 17.0 for the interactive
 heart). `isLiveActivitySupported()` is the only gate; below it the app behaves
@@ -284,6 +293,54 @@ then `xed ios` and pick the **SUB/WAVE Live** scheme — `SubwaveLiveActivity.sw
 carries a `#Preview` so the layout can be worked on without a device. It cannot
 run in Expo Go, and the Dynamic Island needs a Pro-class device or the matching
 simulator.
+
+### App Intents — Siri, Shortcuts, Spotlight (iOS only)
+
+"Tune in" and "Tune out" are `AudioPlaybackIntent`s with Siri phrases
+("Tune in to SUB/WAVE", "Play SUB/WAVE"). The system runs an audio intent in the
+**app's** process without bringing it forward, launching it into the background
+when it is not running.
+
+The intents are thin. Each hands its action to JS and waits for the answer:
+
+- `targets/live-activity/_shared/TuneIntents.swift`: the intents and the
+  `AppShortcutsProvider`.
+- `targets/live-activity/_shared/SubwaveIntentBridge.swift`: posts the request,
+  re-posts until acknowledged, waits for the reply.
+- `modules/app-intents/`: the Expo module that acknowledges, holds requests
+  until JS subscribes, and posts JS's reply back.
+- `src/intents/`: the JS that does the work, registered from `index.ts` beside
+  the playback service, not from a screen.
+
+What is easy to get wrong:
+
+- **The two Swift halves meet on NotificationCenter names, matched by string.**
+  `_shared/` also compiles into the widget extension, which cannot import the
+  module's pod. Change a name on one side, change it on the other.
+- **Intents must compile into the app target**, which is what `_shared/` does.
+  App Intents metadata is extracted per target, and an intent the system cannot
+  find in the app does not exist to Siri or Shortcuts.
+- **A cold start depends on JS booting in the background.** Expo SDK 57 starts
+  React Native in `didFinishLaunching`, so a background launch gets a JS runtime.
+  The SDK 58 template moves that into a `SceneDelegate`, and a background launch
+  connects no scene: every intent would time out on a cold start. Upgrading past
+  SDK 57 needs a plugin that starts the React host at launch.
+- **`usePlayer` must adopt audio it did not start.** A cold tune-in can reach
+  Playing before any screen mounts, so the hook reads the player's state on
+  mount. A tune-out goes through `externalTuneOut()`, or the hook reads the
+  Stopped event as a dead stream and reconnects.
+- **ActivityKit refuses a background app.** `liveactivitiesd` logs "Requester
+  is not foreground" and the card never appears, though the audio plays.
+  Inside a `LiveActivityIntent`'s run the request is allowed, which is why
+  `TuneInIntent` is one and `tune.ts` holds its answer (up to 2 s) until the
+  card has been asked for. `useLiveActivity` also retries when the app comes
+  forward, for a tune-in that missed the window.
+
+Test it cold, in a **Release** build: a Debug dev client loads its bundle from
+Metro and the dev launcher, which a background launch does not exercise the way
+the shipped app does. Kill the app, run **Tune in** from the Shortcuts app, and
+confirm audio starts with the app still in the background; then open the app
+and check the transport shows it as on air.
 
 
 ---
