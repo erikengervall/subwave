@@ -65,6 +65,20 @@ On iOS, confirm the LIVE controls, artwork, and Live Activity still work;
 Cast should still tear down the local session. Bluetooth display of artwork
 and progress must also be checked in the car.
 
+### The app uses the UIScene life cycle
+
+An app built with the **iOS 27 SDK** (Xcode 27) that has no scene manifest is
+killed at launch on iOS 27, in
+`_UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`. The SDK 57
+template still starts React Native from the app delegate, so
+`plugins/withSceneLifecycle.js` does what the SDK 58 template does: a scene
+manifest, a `SceneDelegate` built on Expo's `ExpoAppSceneDelegate` (it creates
+the window, starts React Native and forwards URL and lifecycle events to the app
+delegate), and an app delegate that only creates the factory. The plugin fails
+the prebuild if `AppDelegate.swift` stops matching the template, rather than
+generate an app that starts React Native twice or not at all. Drop it with the
+SDK 58 upgrade.
+
 ### Other load-bearing facts
 
 - **Expo Go does not work** — native modules (RNTP, Skia, Reanimated worklets)
@@ -320,11 +334,11 @@ What is easy to get wrong:
 - **Intents must compile into the app target**, which is what `_shared/` does.
   App Intents metadata is extracted per target, and an intent the system cannot
   find in the app does not exist to Siri or Shortcuts.
-- **A cold start depends on JS booting in the background.** Expo SDK 57 starts
-  React Native in `didFinishLaunching`, so a background launch gets a JS runtime.
-  The SDK 58 template moves that into a `SceneDelegate`, and a background launch
-  connects no scene: every intent would time out on a cold start. Upgrading past
-  SDK 57 needs a plugin that starts the React host at launch.
+- **A cold start depends on JS booting in the background.** The app uses the
+  UIScene life cycle (`plugins/withSceneLifecycle.js`), so React Native starts
+  when a scene connects. iOS connects one for an intent launch even though the
+  app is never shown, so JS boots (checked on iOS 18.5 and 27). If an intent
+  ever times out cold, look there first.
 - **`usePlayer` must adopt audio it did not start.** A cold tune-in can reach
   Playing before any screen mounts, so the hook reads the player's state on
   mount. A tune-out goes through `externalTuneOut()`, or the hook reads the
