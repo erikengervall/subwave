@@ -28,9 +28,13 @@ private let replyName = Notification.Name("SubwaveIntentReply")
 private let appGroup = "group.com.getsubwave.app"
 private let onAirKey = "subwave.onAir"
 private let tuneControlKind = "com.getsubwave.app.tune"
-// The station Siri names on iOS 27 ("play SUB/WAVE" → "Playing <station>"),
-// read by LiveStationEntity (targets/live-activity/_shared/AudioSchemaIntents.swift).
-private let stationNameKey = "subwave.stationName"
+// The saved stations, read by SavedStations in
+// targets/live-activity/_shared/StationEntities.swift, and the app-target class
+// that re-indexes them for Spotlight and the Siri phrases with a station in
+// them. That code sees the entity types; this pod does not, so it is reached
+// by name.
+private let stationsKey = "subwave.stations"
+private let stationIndexClass = "SubwaveStationIndex"
 
 public class SubwaveAppIntentsModule: Module {
   private var requestObserver: NSObjectProtocol?
@@ -100,14 +104,13 @@ public class SubwaveAppIntentsModule: Module {
       }
     }
 
-    /// The active station's display name, for Siri, which cannot read the
-    /// app's station store. Nil clears it.
-    Function("setStationName") { (name: String?) in
-      let defaults = UserDefaults(suiteName: appGroup)
-      if let name, !name.isEmpty {
-        defaults?.set(name, forKey: stationNameKey)
-      } else {
-        defaults?.removeObject(forKey: stationNameKey)
+    /// The saved stations and the active one, as JSON from JS:
+    /// `{ active, stations: [{ id, name }] }`. Names and credential-free bases
+    /// only. Writes them for the intents and re-indexes Spotlight.
+    Function("setStations") { (json: String) in
+      UserDefaults(suiteName: appGroup)?.set(json, forKey: stationsKey)
+      if let index: AnyClass = NSClassFromString(stationIndexClass) {
+        _ = (index as AnyObject).perform(NSSelectorFromString("reindex"))
       }
     }
   }

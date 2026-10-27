@@ -30,7 +30,7 @@ interface Subscription {
 interface NativeAppIntents {
   reply(token: string, ok: boolean, message: string | null): void;
   setOnAir(onAir: boolean): void;
-  setStationName(name: string | null): void;
+  setStations(json: string): void;
   addListener(event: 'onIntent', fn: (request: IntentRequest) => void): Subscription;
 }
 
@@ -55,13 +55,21 @@ export function setOnAir(onAir: boolean): void {
   }
 }
 
-/** The active station's name, which Siri says when it plays it on iOS 27
- *  ("play SUB/WAVE"). Swift cannot read the station store, so it reads this. */
-export function setStationName(name: string | null): void {
+export interface SiriStation {
+  /** The credential-free base URL, which is how Siri and Spotlight refer back
+   *  to it. */
+  id: string;
+  name: string;
+}
+
+/** The saved stations and the active one, for Siri, Shortcuts and Spotlight,
+ *  which cannot read the station store. Names and bases only: never a login
+ *  or a station password. Re-indexes Spotlight. */
+export function setStations(active: string | null, stations: SiriStation[]): void {
   try {
-    native?.setStationName(name);
+    native?.setStations(JSON.stringify({ active, stations }));
   } catch {
-    /* a binary older than the iOS 27 Siri support */
+    /* a binary older than station support for Siri */
   }
 }
 

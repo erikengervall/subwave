@@ -14,19 +14,27 @@ import AppIntents
 // Siri plays with no card on the Lock Screen. tune.ts holds its answer until
 // the card has been asked for, keeping the request inside that run.
 //
-// No skip and no station picker here: every listener shares one live stream,
-// and switching stations is not wired up yet.
+// No skip: every listener shares one live stream. Tune in takes an optional
+// saved station (StationEntities.swift); without one it plays the station
+// listened to last.
+//
+// App target only, like SubwaveShortcuts.swift: the widget's control has its
+// own ToggleTuneIntent, and StationEntity is app-only.
+#if canImport(ExpoModulesCore)
 
 @available(iOS 17.0, *)
 struct TuneInIntent: AudioPlaybackIntent, LiveActivityIntent {
   static var title: LocalizedStringResource = "Tune in"
   static var description = IntentDescription(
-    "Plays the SUB/WAVE station you listened to last, live."
+    "Plays a saved SUB/WAVE station live, or the one you listened to last."
   )
   static var openAppWhenRun: Bool = false
 
+  @Parameter(title: "Station", description: "Leave empty for the station you listened to last.")
+  var station: StationEntity?
+
   func perform() async throws -> some IntentResult {
-    try await SubwaveIntentBridge.perform("tuneIn")
+    try await SubwaveIntentBridge.perform("tuneIn", station.map { ["station": $0.id] } ?? [:])
     return .result()
   }
 }
@@ -42,3 +50,5 @@ struct TuneOutIntent: AudioPlaybackIntent {
     return .result()
   }
 }
+
+#endif

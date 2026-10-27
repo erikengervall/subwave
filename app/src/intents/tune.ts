@@ -1,4 +1,5 @@
-// Tune in and out on behalf of an App Intent (Siri, Shortcuts, a Control).
+// Tune in and out on behalf of an App Intent (Siri, Shortcuts, Spotlight, a
+// Control), including to another saved station.
 // Module-level, not a hook: an intent can launch the app straight into the
 // background, where this runs before any screen has mounted, or with none
 // mounting at all. usePlayer adopts the audio when it does mount.
@@ -6,7 +7,10 @@
 import TrackPlayer, { Event, State } from 'react-native-track-player';
 import type { IntentReply } from '../../modules/app-intents';
 import { isLiveActivitySupported, onLiveActivityStart } from '../../modules/live-activity';
-import { externalTuneOut, getLastLiveMeta, loadAndPlay } from '@/audio/player';
+import { externalTuneOut, getLastLiveMeta, loadAndPlay, teardown } from '@/audio/player';
+import { announceStationStoreChanged, loadStations, setActiveStation } from '@/lib/station';
+import { splitStationAddress, type StoredStationRef } from '@/lib/station-credentials';
+import { findSavedStation } from '@/lib/station-store';
 import { activeStation, NO_STATION_MESSAGE } from './station';
 
 // How long a tune-in waits for audio before answering. Long enough that a
@@ -23,7 +27,19 @@ const CARD_WAIT_MS = 2000;
 
 const ON_AIR = new Set<State>([State.Playing, State.Buffering, State.Loading]);
 
-export async function tuneIn(): Promise<IntentReply> {
+const NOT_SAVED_MESSAGE = "That station isn't saved in SUB/WAVE. Add it in the app first.";
+
+/** Tune in to `stationId` (a saved station's base, as Siri and Spotlight know
+ *  it), or to the station listened to last when there is none. */
+export async function tuneIn(stationId?: string): Promise<IntentReply> {
+  if (stationId) {
+    const store = await loadStations();
+    const wanted = findSavedStation(store.recents, stationId);
+    if (!wanted) return { ok: false, message: NOT_SAVED_MESSAGE };
+    const active = store.activeStation ? splitStationAddress(store.activeStation).base : null;
+    if (splitStationAddress(wanted.url).base !== active) return switchTo(wanted);
+  }
+
   const { state } = await TrackPlayer.getPlaybackState().catch(() => ({ state: State.None }));
   if (ON_AIR.has(state)) return { ok: true };
 
@@ -42,6 +58,26 @@ export async function tuneIn(): Promise<IntentReply> {
     () => loadAndPlay({ url: api.streamUrl('mp3'), headers: api.streamHeaders() }),
     station.name,
   );
+}
+
+/** Another saved station. The store is written and the old stream stopped
+ *  first, and StationContext is told only once the new stream is loaded: by
+ *  the time the screens' base changes, the stream playing belongs to it, so
+ *  usePlayer keeps it instead of stopping a stale one. */
+async function switchTo(ref: StoredStationRef): Promise<IntentReply> {
+  await setActiveStation({ url: ref.url, name: ref.name });
+  await teardown();
+  const station = await activeStation();
+  if (!station) return { ok: false, message: NO_STATION_MESSAGE };
+  const { api } = station;
+  return startAndWait(async () => {
+    try {
+      await loadAndPlay({ url: api.streamUrl('mp3'), headers: api.streamHeaders() });
+    } finally {
+      // The station switched even if its stream did not start.
+      announceStationStoreChanged();
+    }
+  }, station.name);
 }
 
 export async function tuneOut(): Promise<IntentReply> {

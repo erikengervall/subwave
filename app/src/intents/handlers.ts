@@ -13,7 +13,7 @@ export function registerIntentHandlers(): void {
   setIntentHandler(async (action, args) => {
     switch (action) {
       case 'tuneIn':
-        return tuneIn();
+        return tuneIn(args.station);
       case 'tuneOut':
         return tuneOut();
       case 'request':

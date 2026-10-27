@@ -21,6 +21,11 @@ struct SubwaveShortcuts: AppShortcutsProvider {
         "Play \(.applicationName)",
         "Turn on \(.applicationName)",
         "Start \(.applicationName)",
+        // A saved station by name. The names come from StationQuery's
+        // suggestions, refreshed by StationIndex.reindex.
+        "Play \(\.$station) on \(.applicationName)",
+        "Tune in to \(\.$station) on \(.applicationName)",
+        "Listen to \(\.$station) on \(.applicationName)",
       ],
       shortTitle: "Tune in",
       systemImageName: "dot.radiowaves.left.and.right"

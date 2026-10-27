@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { setStationName } from '../../modules/app-intents';
+import { setStations } from '../../modules/app-intents';
 import { teardown } from '@/audio/player';
 import { createApi, type StationApi } from '@/lib/api';
 import {
@@ -17,6 +17,7 @@ import {
   loadStationCredentials,
   loadStationPassword,
   loadStations,
+  onStationStoreChanged,
   removeRecent,
   saveStationPassword,
   setActiveStation,
@@ -24,6 +25,7 @@ import {
   type StationStore,
 } from '@/lib/station';
 import type { StationCredentials } from '@/lib/station-credentials';
+import { stationsForSiri } from '@/lib/station-store';
 
 interface StationContextValue {
   /** True until the persisted store has loaded. */
@@ -58,6 +60,33 @@ interface StationContextValue {
 
 const Ctx = createContext<StationContextValue | null>(null);
 
+/** The stored store plus the active station's login and password, as the
+ *  screens need them. A keychain failure leaves either null rather than
+ *  failing the read. */
+async function readStationState(): Promise<{
+  store: StationStore;
+  credentials: StationCredentials | null;
+  password: string | null;
+}> {
+  const s = await loadStations();
+  let activeCredentials: StationCredentials | null = null;
+  let activePassword: string | null = null;
+  try {
+    activeCredentials = s.activeStation
+      ? await loadStationCredentials(s.activeStation)
+      : null;
+  } catch {
+    // Boot without credentials if the keychain fails; later actions report failure
+    // and leave the vault intact.
+  }
+  try {
+    activePassword = s.activeStation ? await loadStationPassword(s.activeStation) : null;
+  } catch {
+    // Same: a locked station then asks again rather than failing to boot.
+  }
+  return { store: s, credentials: activeCredentials, password: activePassword };
+}
+
 export function StationProvider({ children }: { children: React.ReactNode }) {
   const [store, setStore] = useState<StationStore>({ activeStation: null, recents: [] });
   const [credentials, setCredentials] = useState<StationCredentials | null>(null);
@@ -74,26 +103,11 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let alive = true;
-    loadStations().then(async (s) => {
-      let activeCredentials: StationCredentials | null = null;
-      let activePassword: string | null = null;
-      try {
-        activeCredentials = s.activeStation
-          ? await loadStationCredentials(s.activeStation)
-          : null;
-      } catch {
-        // Boot without credentials if the keychain fails; later actions report failure
-        // and leave the vault intact.
-      }
-      try {
-        activePassword = s.activeStation ? await loadStationPassword(s.activeStation) : null;
-      } catch {
-        // Same: a locked station then asks again rather than failing to boot.
-      }
+    readStationState().then((s) => {
       if (alive) {
-        setStore(s);
-        setCredentials(activeCredentials);
-        setStationPassword(activePassword);
+        setStore(s.store);
+        setCredentials(s.credentials);
+        setStationPassword(s.password);
         setReady(true);
       }
     }).catch(() => {
@@ -103,6 +117,23 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
       alive = false;
     };
   }, [setStationPassword]);
+
+  // A station switch from Siri, Shortcuts or Spotlight (src/intents/tune.ts)
+  // writes the store and starts the new stream itself; follow it. No teardown,
+  // unlike selectStation: the stream already playing is the new station's.
+  useEffect(
+    () =>
+      onStationStoreChanged(() => {
+        readStationState()
+          .then((s) => {
+            setCredentials(s.credentials);
+            setStationPassword(s.password);
+            setStore(s.store);
+          })
+          .catch(() => {});
+      }),
+    [setStationPassword],
+  );
 
   const selectStation = useCallback(async (
     ref: StationRef,
@@ -168,10 +199,11 @@ export function StationProvider({ children }: { children: React.ReactNode }) {
     return store.recents.find((r) => r.url === base)?.name ?? null;
   }, [base, store.recents]);
 
-  // Siri names the station it plays on iOS 27 and cannot read this store.
+  // Siri, Shortcuts and Spotlight know the saved stations by name, and cannot
+  // read this store.
   useEffect(() => {
-    if (ready) setStationName(name);
-  }, [ready, name]);
+    if (ready) setStations(base, stationsForSiri(store.recents));
+  }, [ready, base, store.recents]);
 
   const value = useMemo<StationContextValue>(
     () => ({

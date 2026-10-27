@@ -330,6 +330,19 @@ the in-app heart and the Live Activity fill straight away (`like-events.ts`).
 The Live Activity's own heart is `LikeTrackIntent`, hidden from Shortcuts so
 there is one "like" action there.
 
+**Saved stations** reach Siri, Shortcuts and Spotlight (iOS 18) as entities
+(`StationEntities.swift`): "Play Night Shift on SUB/WAVE", Tune in's Station
+parameter, and a Spotlight result that opens the app tuned to it. Swift cannot
+read the station store, so `StationContext` mirrors names and credential-free
+bases into the App Group (`setStations`), and the module then calls the
+app-target `SubwaveStationIndex.reindex` by class name to refresh Spotlight and
+the Siri phrases. A switch away from the active station is JS
+(`src/intents/tune.ts`): it writes the store, stops the old stream, starts the
+new one, and only then tells `StationContext`, so `usePlayer` finds the
+playing stream already belongs to the new base (`streamBelongsTo`) and keeps
+it. On iOS 27, `AudioSchemaIntents.swift` exposes the same stations to Siri's
+audio search.
+
 The intents are thin. Each hands its action to JS and waits for the answer:
 
 - `targets/live-activity/_shared/`: the intents, and the Siri phrases in

@@ -17,6 +17,7 @@ import {
   teardown,
 } from '@/audio/player';
 import type { StationApi } from '@/lib/api';
+import { streamBelongsTo } from '@/lib/station-store';
 import type { StreamFormat } from '@/lib/streamFormat';
 import { loadVolumePref, saveVolumePref } from '@/lib/volume';
 
@@ -320,12 +321,17 @@ export function usePlayer(
   // RNTP level; drop local tuned-in state so the UI doesn't claim "on air"
   // over dead audio. (The event handler ignores State.None because reset()
   // also fires it mid tune-in and mid reconnect.)
+  // One exception: a switch from Siri, Shortcuts or Spotlight
+  // (src/intents/tune.ts) starts the new station's stream before the base
+  // changes here. A stream that already belongs to the new base is kept.
   const prevBaseRef = useRef(api?.base ?? null);
   useEffect(() => {
     const nextBase = api?.base ?? null;
     if (prevBaseRef.current === nextBase) return;
     prevBaseRef.current = nextBase;
-    if (tunedInRef.current) stop();
+    const meta = getLastLiveMeta();
+    const adopted = !!(nextBase && meta && streamBelongsTo(meta.url, nextBase));
+    if (tunedInRef.current && !adopted) stop();
   }, [api, stop]);
 
   // Retune onto a new mount in place. Keyed on the transition so a steady
