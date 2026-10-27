@@ -37,15 +37,32 @@ struct SavedStations: Decodable {
     stations.first { $0.id == active } ?? stations.first
   }
 
-  /// Stations whose name contains the term or is contained in it, for
-  /// transcribed speech ("night shift" against "Night Shift Radio").
+  /// Stations a spoken or typed term names. Compared folded, because Siri
+  /// transcribes "ChillWave Radio" as "chill wave radio": an exact name first,
+  /// else a name containing the term or contained in it ("night shift" against
+  /// "Night Shift Radio"). A generic word names no station, so "play radio on
+  /// SUB/WAVE" stays on the one listened to last instead of landing on
+  /// whichever station has Radio in its name.
   func matching(_ term: String) -> [Station] {
-    let term = term.trimmingCharacters(in: .whitespaces)
-    guard !term.isEmpty else { return [] }
+    let wanted = Self.fold(term)
+    guard wanted.count >= 3, !Self.genericTerms.contains(wanted) else { return [] }
+    let exact = stations.filter { Self.fold($0.name) == wanted }
+    if !exact.isEmpty { return exact }
     return stations.filter {
-      $0.name.localizedStandardContains(term) || term.localizedStandardContains($0.name)
+      let name = Self.fold($0.name)
+      return !name.isEmpty && (name.contains(wanted) || wanted.contains(name))
     }
   }
+
+  /// Lowercased, accents dropped, letters and digits only.
+  static func fold(_ text: String) -> String {
+    text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+      .filter { $0.isLetter || $0.isNumber }
+  }
+
+  private static let genericTerms: Set<String> = [
+    "radio", "theradio", "station", "mystation", "music", "somemusic", "live", "subwave",
+  ]
 }
 
 @available(iOS 17.0, *)
