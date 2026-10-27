@@ -24,6 +24,7 @@ interface Subscription {
 
 interface NativeAppIntents {
   reply(token: string, ok: boolean, message: string | null): void;
+  setOnAir(onAir: boolean): void;
   addListener(event: 'onIntent', fn: (request: IntentRequest) => void): Subscription;
 }
 
@@ -37,6 +38,16 @@ const native: NativeAppIntents | null = (() => {
     return null;
   }
 })();
+
+/** Tell the tune control (Control Center, Lock Screen, Action button) whether
+ *  the station is on. The control cannot ask the player, so it shows this. */
+export function setOnAir(onAir: boolean): void {
+  try {
+    native?.setOnAir(onAir);
+  } catch {
+    /* a binary older than the control */
+  }
+}
 
 /** Subscribing is what releases requests the module held while JS booted, so
  *  call this once, early, outside the React tree. */

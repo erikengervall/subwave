@@ -8,6 +8,7 @@ import {
   addAudioRouteChangeListener,
   ROUTE_REASON_OLD_DEVICE_UNAVAILABLE,
 } from '../../modules/airplay-route-picker';
+import { setOnAir } from '../../modules/app-intents';
 import {
   getLastLiveMeta,
   loadAndPlay,
@@ -247,6 +248,13 @@ export function usePlayer(
       alive = false;
     };
   }, []);
+
+  // The tune control (targets/live-activity/TuneControl.swift) cannot ask the
+  // player, so it shows this. Written on mount too, which clears a flag an
+  // app killed mid-song left on.
+  useEffect(() => {
+    setOnAir(tunedIn);
+  }, [tunedIn]);
 
   // An App Intent tune-out (src/intents/tune.ts): the same synchronous ref
   // flip as the RemotePause handler above, ahead of the Stopped event.

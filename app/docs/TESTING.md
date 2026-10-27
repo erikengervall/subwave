@@ -313,7 +313,9 @@ simulator.
 "Tune in" and "Tune out" are `AudioPlaybackIntent`s with Siri phrases
 ("Tune in to SUB/WAVE", "Play SUB/WAVE"). The system runs an audio intent in the
 **app's** process without bringing it forward, launching it into the background
-when it is not running.
+when it is not running. iOS 18 adds the **tune control** (`TuneControl.swift`),
+a toggle for Control Center, the Lock Screen and the Action button, driven by
+`ToggleTuneIntent` through the same bridge.
 
 The intents are thin. Each hands its action to JS and waits for the answer:
 
@@ -349,6 +351,14 @@ What is easy to get wrong:
   `TuneInIntent` is one and `tune.ts` holds its answer (up to 2 s) until the
   card has been asked for. `useLiveActivity` also retries when the app comes
   forward, for a tune-in that missed the window.
+- **The control cannot ask the player.** It reads an on-air flag in the App
+  Group that `usePlayer` writes through `setOnAir`, which also reloads the
+  control. An app killed mid-song leaves the flag on until the next tap or
+  launch. The flag key and the control kind are matched by string between
+  `TuneControl.swift` and the app-intents module.
+- **A control never resolves parameters.** `ToggleTuneIntent` is built with
+  `init(turningOn:)`; an instance with `value` unset installs and renders, then
+  does nothing when tapped.
 
 Test it cold, in a **Release** build: a Debug dev client loads its bundle from
 Metro and the dev launcher, which a background launch does not exercise the way

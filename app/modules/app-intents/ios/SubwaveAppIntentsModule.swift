@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Foundation
+import WidgetKit
 
 // The app half of the App Intents bridge: Siri, Shortcuts and Controls ask,
 // JS answers.
@@ -21,6 +22,12 @@ import Foundation
 private let requestName = Notification.Name("SubwaveIntentRequest")
 private let ackName = Notification.Name("SubwaveIntentAck")
 private let replyName = Notification.Name("SubwaveIntentReply")
+
+// The tune control's state (targets/live-activity/TuneControl.swift), matched
+// by STRING like the names above.
+private let appGroup = "group.com.getsubwave.app"
+private let onAirKey = "subwave.onAir"
+private let tuneControlKind = "com.getsubwave.app.tune"
 
 public class SubwaveAppIntentsModule: Module {
   private var requestObserver: NSObjectProtocol?
@@ -77,6 +84,17 @@ public class SubwaveAppIntentsModule: Module {
         info["message"] = message
       }
       NotificationCenter.default.post(name: replyName, object: nil, userInfo: info)
+    }
+
+    /// Whether the station is on, for the tune control, which cannot ask the
+    /// player. Reloads the control only on a change.
+    Function("setOnAir") { (onAir: Bool) in
+      guard let defaults = UserDefaults(suiteName: appGroup) else { return }
+      if defaults.object(forKey: onAirKey) as? Bool == onAir { return }
+      defaults.set(onAir, forKey: onAirKey)
+      if #available(iOS 18.0, *) {
+        ControlCenter.shared.reloadControls(ofKind: tuneControlKind)
+      }
     }
   }
 
