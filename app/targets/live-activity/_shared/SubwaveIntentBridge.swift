@@ -25,9 +25,11 @@ enum SubwaveIntentBridge {
   /// stream to start playing, so this covers a slow first connection.
   private static let replyWindow: TimeInterval = 20
 
-  /// Runs `action` in JS. Throws the message JS gave, or a generic one when
-  /// the app never answered.
-  static func perform(_ action: String) async throws {
+  /// Runs `action` in JS with `args`. Returns the message JS answered with, if
+  /// any; throws the message JS gave for a failure, or a generic one when the
+  /// app never answered.
+  @discardableResult
+  static func perform(_ action: String, _ args: [String: String] = [:]) async throws -> String? {
     let token = UUID().uuidString
     let box = ReplyBox()
     let center = NotificationCenter.default
@@ -49,7 +51,7 @@ enum SubwaveIntentBridge {
     while true {
       if let reply = box.reply {
         guard reply.ok else { throw SubwaveIntentError(reply.message) }
-        return
+        return reply.message
       }
       let waited = Date().timeIntervalSince(started)
       if waited > replyWindow || (!box.acked && waited > ackWindow) {
@@ -57,7 +59,8 @@ enum SubwaveIntentBridge {
       }
       if !box.acked {
         center.post(
-          name: requestName, object: nil, userInfo: ["token": token, "action": action])
+          name: requestName, object: nil,
+          userInfo: ["token": token, "action": action, "args": args])
       }
       try await Task.sleep(nanoseconds: 200_000_000)
     }

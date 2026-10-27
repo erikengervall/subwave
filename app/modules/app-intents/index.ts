@@ -7,15 +7,20 @@ import { Platform } from 'react-native';
 
 export interface IntentReply {
   ok: boolean;
-  /** Spoken by Siri, or shown by Shortcuts, when `ok` is false. */
+  /** Spoken by Siri, or shown by Shortcuts: the error when `ok` is false, the
+   *  answer for an intent that has one (a song request). */
   message?: string;
 }
 
-export type IntentHandler = (action: string) => Promise<IntentReply>;
+export type IntentHandler = (
+  action: string,
+  args: Record<string, string>,
+) => Promise<IntentReply>;
 
 interface IntentRequest {
   token: string;
   action: string;
+  args?: Record<string, string>;
 }
 
 interface Subscription {
@@ -55,8 +60,8 @@ export function setIntentHandler(handler: IntentHandler): Subscription | null {
   if (!native) return null;
   const bridge = native;
   try {
-    return bridge.addListener('onIntent', ({ token, action }) => {
-      void handler(action)
+    return bridge.addListener('onIntent', ({ token, action, args }) => {
+      void handler(action, args ?? {})
         .catch((): IntentReply => ({ ok: false }))
         .then((reply) => {
           try {

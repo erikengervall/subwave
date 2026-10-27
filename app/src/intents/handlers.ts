@@ -4,15 +4,22 @@
 // screen mounts.
 
 import { setIntentHandler } from '../../modules/app-intents';
+import { askForSong } from './request-reply';
+import { activeStation, NO_STATION_MESSAGE } from './station';
 import { tuneIn, tuneOut } from './tune';
 
 export function registerIntentHandlers(): void {
-  setIntentHandler(async (action) => {
+  setIntentHandler(async (action, args) => {
     switch (action) {
       case 'tuneIn':
         return tuneIn();
       case 'tuneOut':
         return tuneOut();
+      case 'request': {
+        const station = await activeStation();
+        if (!station) return { ok: false, message: NO_STATION_MESSAGE };
+        return askForSong(args.text ?? '', { api: station.api });
+      }
       default:
         return { ok: false, message: 'Update SUB/WAVE to use this.' };
     }

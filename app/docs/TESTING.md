@@ -315,12 +315,15 @@ simulator.
 **app's** process without bringing it forward, launching it into the background
 when it is not running. iOS 18 adds the **tune control** (`TuneControl.swift`),
 a toggle for Control Center, the Lock Screen and the Action button, driven by
-`ToggleTuneIntent` through the same bridge.
+`ToggleTuneIntent` through the same bridge. **Request a song** ("Request a song
+on SUB/WAVE") has Siri ask what to play, sends it through the request drawer's
+own `POST /request` and polling, and reads back the DJ's answer. It waits up to
+10 s for the match, then says the request is in.
 
 The intents are thin. Each hands its action to JS and waits for the answer:
 
-- `targets/live-activity/_shared/TuneIntents.swift`: the intents and the
-  `AppShortcutsProvider`.
+- `targets/live-activity/_shared/`: the intents, and the Siri phrases in
+  `SubwaveShortcuts.swift`.
 - `targets/live-activity/_shared/SubwaveIntentBridge.swift`: posts the request,
   re-posts until acknowledged, waits for the reply.
 - `modules/app-intents/`: the Expo module that acknowledges, holds requests
@@ -333,6 +336,13 @@ What is easy to get wrong:
 - **The two Swift halves meet on NotificationCenter names, matched by string.**
   `_shared/` also compiles into the widget extension, which cannot import the
   module's pod. Change a name on one side, change it on the other.
+- **The Siri phrases must not compile into the widget.** A second
+  `AppShortcutsProvider` in the extension made Shortcuts fail a shortcut with a
+  parameter to ask for ("Couldn't find AppShortcutsProvider"), though Tune in
+  still ran. `SubwaveShortcuts.swift` and `RequestSongIntent.swift` sit inside
+  `#if canImport(ExpoModulesCore)`, true only in the app target, because only it
+  links the Expo pods. Check the widget's `Metadata.appintents` lists no
+  shortcuts after a change there.
 - **Intents must compile into the app target**, which is what `_shared/` does.
   App Intents metadata is extracted per target, and an intent the system cannot
   find in the app does not exist to Siri or Shortcuts.
@@ -365,6 +375,11 @@ Metro and the dev launcher, which a background launch does not exercise the way
 the shipped app does. Kill the app, run **Tune in** from the Shortcuts app, and
 confirm audio starts with the app still in the background; then open the app
 and check the transport shows it as on air.
+
+Test **Request a song** against a local stand-in, never a live station: a test
+request really queues, and the DJ may announce it. Any server answering
+`/api/health`, `POST /api/request` and `GET /api/request/:id` will do; add it in
+onboarding as `http://localhost:<port>`.
 
 
 ---

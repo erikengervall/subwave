@@ -42,33 +42,3 @@ struct TuneOutIntent: AudioPlaybackIntent {
     return .result()
   }
 }
-
-/// Siri phrases. Every phrase must carry the app's name; "Sub Wave" and
-/// "Subwave" reach it through INAlternativeAppNames (app.json), since nobody
-/// says the slash.
-@available(iOS 17.0, *)
-struct SubwaveShortcuts: AppShortcutsProvider {
-  static var appShortcuts: [AppShortcut] {
-    AppShortcut(
-      intent: TuneInIntent(),
-      phrases: [
-        "Tune in to \(.applicationName)",
-        "Play \(.applicationName)",
-        "Turn on \(.applicationName)",
-        "Start \(.applicationName)",
-      ],
-      shortTitle: "Tune in",
-      systemImageName: "dot.radiowaves.left.and.right"
-    )
-    AppShortcut(
-      intent: TuneOutIntent(),
-      phrases: [
-        "Tune out of \(.applicationName)",
-        "Stop \(.applicationName)",
-        "Turn off \(.applicationName)",
-      ],
-      shortTitle: "Tune out",
-      systemImageName: "stop.fill"
-    )
-  }
-}

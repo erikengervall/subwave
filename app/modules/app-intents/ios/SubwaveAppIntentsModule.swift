@@ -76,8 +76,8 @@ public class SubwaveAppIntentsModule: Module {
       }
     }
 
-    /// JS's answer to one request. `message` is what Siri or Shortcuts shows
-    /// when `ok` is false.
+    /// JS's answer to one request. `message` is what Siri says or Shortcuts
+    /// shows: the error when `ok` is false, the answer when an intent has one.
     Function("reply") { (token: String, ok: Bool, message: String?) in
       var info: [String: Any] = ["token": token, "ok": ok]
       if let message {
@@ -105,7 +105,8 @@ public class SubwaveAppIntentsModule: Module {
     else { return }
     NotificationCenter.default.post(name: ackName, object: nil, userInfo: ["token": token])
     guard seen.insert(token).inserted else { return }
-    let request: [String: Any] = ["token": token, "action": action]
+    let args = info?["args"] as? [String: String] ?? [:]
+    let request: [String: Any] = ["token": token, "action": action, "args": args]
     if listening {
       sendEvent("onIntent", request)
     } else {

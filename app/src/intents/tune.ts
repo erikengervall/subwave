@@ -7,8 +7,7 @@ import TrackPlayer, { Event, State } from 'react-native-track-player';
 import type { IntentReply } from '../../modules/app-intents';
 import { isLiveActivitySupported, onLiveActivityStart } from '../../modules/live-activity';
 import { externalTuneOut, getLastLiveMeta, loadAndPlay } from '@/audio/player';
-import { createApi } from '@/lib/api';
-import { loadStationCredentials, loadStationPassword, loadStations } from '@/lib/station';
+import { activeStation, NO_STATION_MESSAGE } from './station';
 
 // How long a tune-in waits for audio before answering. Long enough that a
 // refused or unreachable stream is reported to Siri rather than silently
@@ -36,18 +35,12 @@ export async function tuneIn(): Promise<IntentReply> {
   // station, as StationContext does at boot. Always the MP3 mount: a stored
   // format preference is only honoured once the station's feed confirms the
   // mount, and usePlayer retunes onto it when the feed loads.
-  const store = await loadStations();
-  const base = store.activeStation;
-  if (!base) {
-    return { ok: false, message: 'Open SUB/WAVE and pick a station first.' };
-  }
-  const credentials = await loadStationCredentials(base).catch(() => null);
-  const password = await loadStationPassword(base).catch(() => null);
-  const api = createApi(base, credentials, () => password);
-  const name = store.recents.find((r) => r.url === base)?.name ?? null;
+  const station = await activeStation();
+  if (!station) return { ok: false, message: NO_STATION_MESSAGE };
+  const { api } = station;
   return startAndWait(
     () => loadAndPlay({ url: api.streamUrl('mp3'), headers: api.streamHeaders() }),
-    name,
+    station.name,
   );
 }
 

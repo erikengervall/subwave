@@ -1,0 +1,51 @@
+import AppIntents
+
+// App target only. `_shared/` also compiles into the widget extension, and a
+// second AppShortcutsProvider there sends Shortcuts to the wrong bundle for a
+// shortcut with a parameter to ask for: "Couldn't find AppShortcutsProvider".
+// Only the app target links the Expo pods, which is what this tests; if the
+// widget ever joins the Podfile, find another switch.
+#if canImport(ExpoModulesCore)
+
+/// Siri phrases. Every phrase must carry the app's name; "Sub Wave" and
+/// "Subwave" reach it through INAlternativeAppNames (app.json), since nobody
+/// says the slash. A free-text parameter cannot be part of a phrase, so a
+/// request is asked for after the phrase (RequestSongIntent's dialog).
+@available(iOS 17.0, *)
+struct SubwaveShortcuts: AppShortcutsProvider {
+  static var appShortcuts: [AppShortcut] {
+    AppShortcut(
+      intent: TuneInIntent(),
+      phrases: [
+        "Tune in to \(.applicationName)",
+        "Play \(.applicationName)",
+        "Turn on \(.applicationName)",
+        "Start \(.applicationName)",
+      ],
+      shortTitle: "Tune in",
+      systemImageName: "dot.radiowaves.left.and.right"
+    )
+    AppShortcut(
+      intent: TuneOutIntent(),
+      phrases: [
+        "Tune out of \(.applicationName)",
+        "Stop \(.applicationName)",
+        "Turn off \(.applicationName)",
+      ],
+      shortTitle: "Tune out",
+      systemImageName: "stop.fill"
+    )
+    AppShortcut(
+      intent: RequestSongIntent(),
+      phrases: [
+        "Request a song on \(.applicationName)",
+        "Make a request on \(.applicationName)",
+        "Ask \(.applicationName) for a song",
+      ],
+      shortTitle: "Request a song",
+      systemImageName: "music.note"
+    )
+  }
+}
+
+#endif
