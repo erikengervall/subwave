@@ -6,7 +6,7 @@
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { KeyRound, X } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -104,6 +104,16 @@ export default function StationLogin() {
   const canSave = loaded === 'ready' && !!draft && !sameLogin(draft, saved) && !busy;
 
   const close = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  // Closing the screen mid-check cancels the save: a late verdict must neither
+  // save a login the listener walked away from nor close whatever screen is on
+  // top by then (the Stations list, or the player itself).
+  const openRef = useRef(true);
+  useEffect(() => {
+    openRef.current = true;
+    return () => {
+      openRef.current = false;
+    };
+  }, []);
 
   const edit = (setter: (value: string) => void) => (value: string) => {
     setter(value);
@@ -125,7 +135,7 @@ export default function StationLogin() {
   const store = async (login: StationCredentials) => {
     try {
       await saveLogin(base, login);
-      close();
+      if (openRef.current) close();
     } catch {
       setBusy(false);
       setError("Couldn't save this login securely. The saved login was left as it was; unlock the device and try again.");
@@ -150,6 +160,7 @@ export default function StationLogin() {
         ),
       checkStationAuth: (pw) => api.checkStationAuth(pw),
     });
+    if (!openRef.current) return;
     if (result.verdict === 'accepted') {
       await store(draft);
       return;
