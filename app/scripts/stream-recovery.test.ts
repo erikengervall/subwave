@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import {
   CHURN_MIN_PACE,
+  RECONNECT_MAX_MS,
   StreamRecovery,
   WATCHDOG_MIN_PACE,
   WATCHDOG_MS,
@@ -249,6 +250,27 @@ test('a failing reload backs off while nothing plays', async (t) => {
   await h.tick(4000);
   // 0, 0.5s, 1.5s, 3.5s
   assert.deepEqual(h.reloads, ['tune', 'error', 'error', 'error']);
+});
+
+test('a station that keeps failing is backed off to the ceiling, past the watchdog', async (t) => {
+  const h = setup(t);
+  h.recovery.tuneIn();
+  await settle();
+  // Each load fails as RNTP reports it, after the load call has returned: the
+  // item's Loading arms the watchdog, then a PlaybackError and the Error state.
+  const at: number[] = [];
+  for (let elapsed = 0; elapsed < 4 * 60_000; elapsed += 250) {
+    while (at.length < h.reloads.length) {
+      at.push(Date.now());
+      h.recovery.onState('loading');
+      h.recovery.onError();
+      h.recovery.onState('error');
+    }
+    await h.tick(250);
+  }
+  const gaps = at.slice(1).map((ms, i) => ms - at[i]);
+  assert.ok(gaps[gaps.length - 1] >= RECONNECT_MAX_MS, `gaps ${gaps.join(', ')}`);
+  assert.ok(h.reloads.length <= 11, `${h.reloads.length} loads in 4 minutes`);
 });
 
 test('a regained link reloads a stopped stall at once, but not a playing one', async (t) => {

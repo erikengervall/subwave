@@ -127,6 +127,8 @@ export class StreamRecovery {
   private flaps: Flap[] = [];
   // Consecutive failures since the last sign of playback; drives the backoff.
   private retries = 0;
+  // The episode whose deadline an error's backoff has already set.
+  private erroredEpisode = -1;
   private reloading = false;
   // An explicit reload (tune, format) asked for while one was in flight.
   private queued: ReloadReason | null = null;
@@ -238,18 +240,28 @@ export class StreamRecovery {
     }
   }
 
+  // An error is a verdict on the attempt where a stall is only an instant, so
+  // its backoff replaces the pending check even when that would fire sooner:
+  // every load's own Loading arms the watchdog, and without this a station that
+  // keeps failing would be retried at the watchdog's pace, never backing off
+  // past it. Once per episode, which keeps the deadline bounded and counts
+  // PlaybackError and State.Error, which arrive as a pair, as one failure.
   private armRetry(): void {
-    if (this.arm('error', retryDelay(this.retries))) this.retries += 1;
+    const replace = this.erroredEpisode !== this.episode;
+    if (this.arm('error', retryDelay(this.retries), undefined, replace)) {
+      this.retries += 1;
+      this.erroredEpisode = this.episode;
+    }
   }
 
-  /** Schedule a media-clock check. An earlier pending check stands. Returns
-   *  whether this call set the deadline. */
-  private arm(reason: CheckReason, delay: number, baseline?: ProgressSample): boolean {
+  /** Schedule a media-clock check. An earlier pending check stands unless
+   *  `replace`. Returns whether this call set the deadline. */
+  private arm(reason: CheckReason, delay: number, baseline?: ProgressSample, replace = false): boolean {
     if (!this.active) return false;
     const due = this.now() + delay;
-    if (this.check && this.check.due <= due) return false;
+    if (this.check && this.check.due <= due && !replace) return false;
     if (this.check) {
-      // An earlier deadline for the same episode; its baseline still applies.
+      // A new deadline for the same episode; its baseline still applies.
       clearTimeout(this.check.timer);
     } else {
       this.episode += 1;
