@@ -74,7 +74,10 @@ every listener connect, so:
   rides the stream as `?auth=`, so Google Cast works too. A listener who had
   followed earlier advice and typed the stream password into **Station login**
   is recognised and not asked again. If the password is later rotated, the app
-  asks again the next time the station is opened, or once playback stalls.
+  asks again the next time the station is opened, or once playback stalls, and
+  says the saved password was not accepted. To clear a saved password yourself,
+  open **Stations**, then **Station login** on the station, and tap
+  **Forget station password**.
 
 While the password is on, `/listen.pls` and `/listen.m3u` return 403 — they
 would otherwise hand out credential-less URLs that no longer play.
@@ -108,7 +111,7 @@ something half-works:
   Unreachable* / HTTP 401 in the app while the exact same URL played fine in a
   browser, in VLC and via `curl` (#764).
 
-Three things to know:
+Things to know:
 
 - **The station URL is stored without credentials.** The username and password
   live in this device's iOS Keychain or Android Keystore-backed secure storage.
@@ -123,6 +126,19 @@ Three things to know:
   entered at the app's private-station prompt, it rides the stream URL.
 - **Special characters need no percent-encoding in the fields.** Type the real
   username and password, including `@` or `:`.
+- **A saved login can be changed or removed.** In **Stations**, tap the key on
+  a saved station, or **Station login** on the station you're tuned in to. The
+  app checks a changed login with the station before saving it: a login the
+  station refuses is never saved, and one it couldn't check (the station is
+  unreachable) is saved only if you tap **Save anyway**. On a station with no
+  proxy login but the stream password on, the login's password is checked as
+  the stream password.
+- **A login the station stops accepting stops the player.** When the proxy
+  answers the saved login with 401 or 403, the player stops reconnecting and
+  says **Station login rejected**, with a button to the same screen. A network
+  drop or a timeout never does this. The app finds out by asking
+  `/api/health`, never the stream (that would count a listener), so a proxy
+  that guards only the audio stream and not `/api` goes unnoticed.
 
 Older app versions accepted `https://user:pass@host` addresses. On upgrade,
 the app removes that userinfo from the saved station URL and migrates the

@@ -52,6 +52,24 @@ Mark each box per platform. Note the device + OS version you tested on.
 - [ ] **iOS** / [ ] **Android** — **Google Cast, disconnect**: end the session from the cast dialog → playback **resumes locally** at the live edge. Sleep timer while casting stops the Cast audio when it lapses.
 - [ ] **iOS** / [ ] **Android** — **Google Cast, station switch**: switching stations while casting stops remote playback (matches local behaviour); re-tune casts the new station.
 
+## Station login _(validates #1873)_
+
+Needs a station behind a reverse proxy with HTTP Basic Auth, and one with SUB/WAVE's stream password on and no proxy login.
+
+- [ ] **iOS** / [ ] **Android** — **Add a station with a login**: + Add a station → open Station login → the username/password fields look and behave as before → health check passes → tunes in and plays. _(the fields moved into `LoginFields`)_
+- [ ] **iOS** / [ ] **Android** — **Edit a saved login**: Stations → key button on the row → the saved username and password are filled in → change to a working login → Check and save → the screen closes and the station plays.
+- [ ] **iOS** / [ ] **Android** — **Single station, from the tuned-in card**: with only one station, Stations → **Station login** on the Tuned in card → edit → save. No need to switch station or remove it first.
+- [ ] **iOS** / [ ] **Android** — **Wrong login is not saved**: enter a wrong password → Check and save → "The station refused this login…" → close and reopen: the old login is still there.
+- [ ] **iOS** — **Wrong login after a right one in the same session**: tune in with the right login, then edit to a wrong password → still refused. _(NSURLSession must not answer the proxy with the cached login)_
+- [ ] **iOS** / [ ] **Android** — **Stream-password station, no proxy**: a Station login whose password is the stream password saves; a wrong one is refused with "This station doesn't ask for a login…".
+- [ ] **iOS** / [ ] **Android** — **Unreachable station**: airplane mode (or stop the station) → Check and save → "Couldn't reach the station…" and a **Save anyway** button → Save anyway saves it. Editing a field hides Save anyway again.
+- [ ] **iOS** / [ ] **Android** — **http:// station**: Check and save on an explicit `http://` station asks "Send station login over HTTP?" first; Cancel sends nothing.
+- [ ] **iOS** / [ ] **Android** — **Remove login**: Remove login → confirm → fields clear, the station opens without a login, and the Cast button comes back.
+- [ ] **iOS** / [ ] **Android** — **Login rejected while listening**: change the proxy password on the server while tuned in → within about 10–40 s the audio stops and **Station login rejected** covers the player; it does not keep reconnecting (proxy log). **Edit station login** → new login → save → the overlay clears and Tune in plays. **Try again** clears it only once the station accepts.
+- [ ] **iOS** / [ ] **Android** — **No false alarm**: airplane mode while tuned in on a station with a login → the usual connection banner, never Station login rejected.
+- [ ] **iOS** / [ ] **Android** — **Station password**: Station login screen → **Forget station password** → back on the player, the password prompt appears. Rotate the password in Admin and reopen the station → the prompt says "The saved password was not accepted."
+- [ ] **iOS** / [ ] **Android** — **Upgrade keeps saved logins**: on the previous build save a station with a login, install this build over it → the station still plays, and the edit screen shows the login filled in.
+
 ## Accessibility
 
 - [ ] **iOS** — **VoiceOver** reads the transport controls (power/tune, mute, volume) and the connection banner (`accessibilityRole="alert"`) with sensible labels.
