@@ -34,6 +34,9 @@ export type ResumeInfo = {
   showChanged: boolean;
 };
 
+/** The latest idle pause as ages in ms (#2072); `endedMsAgo` is null while it lasts. */
+export type IdleWindow = { startedMsAgo: number; endedMsAgo: number | null };
+
 export function createStreamIdleMonitor(overrides: Partial<{
   idleStatus: () => Promise<boolean>;
   idleOn: () => Promise<unknown>;
@@ -48,9 +51,13 @@ export function createStreamIdleMonitor(overrides: Partial<{
   showKeyAt: (ms: number) => string;
   frozenTrackShowKey: () => string | null;
   onResume: (info: ResumeInfo) => Promise<void>;
+  clock: () => number;
 }> = {}) {
   const deps = {
     idleStatus, idleOn, idleOff, refresh, gatedListenerCount, peekListeners, setStreamIdle, warmHeavy,
+    // Monotonic: the pause window is only ever differenced, so a wall-clock
+    // step must not move it.
+    clock: () => performance.now(),
     streamSettings: () => settings.get()?.stream,
     log: (kind: string, message: string) => queue.log(kind, message),
     showKeyAt,
@@ -64,6 +71,12 @@ export function createStreamIdleMonitor(overrides: Partial<{
   };
   let state: IdleState = { idle: false, zeroSince: null };
   let startupReleasePending = false;
+  // The latest pause, stamped when the mixer acknowledged each command (#2072).
+  // The web player sizes its skip over a woken station's stale silence from it,
+  // so each stamp errs toward a skip that is too small: an adopted pause counts
+  // from boot, and a startup release that may or may not have ended a pause
+  // records nothing.
+  let pauseWindow: { startedAt: number; endedAt: number | null } | null = null;
 
   // The track frozen by the pause was chosen for one show; hours later another
   // can be on air. Asked of the track rather than remembered from the pause,
@@ -77,6 +90,17 @@ export function createStreamIdleMonitor(overrides: Partial<{
   // Read by GET /state so the player can tell "nobody's here" from "broken".
   function isIdle() {
     return state.idle;
+  }
+
+  // Read by GET /state as ages, never timestamps, so a listener's skewed clock
+  // cannot misread them. null before the first pause since boot.
+  function idleWindow(): IdleWindow | null {
+    if (!pauseWindow) return null;
+    const now = deps.clock();
+    return {
+      startedMsAgo: Math.round(now - pauseWindow.startedAt),
+      endedMsAgo: pauseWindow.endedAt === null ? null : Math.round(now - pauseWindow.endedAt),
+    };
   }
 
   async function tick() {
@@ -104,12 +128,14 @@ export function createStreamIdleMonitor(overrides: Partial<{
     try {
       if (action === 'pause') {
         await deps.idleOn();
+        pauseWindow = { startedAt: deps.clock(), endedAt: null };
         deps.log(
           'scheduler',
           `programme idle-paused — no listeners for ${idleAfterMin} min (mounts stay up, resumes on connect)`,
         );
       } else if (action === 'resume') {
         await deps.idleOff();
+        if (state.idle && pauseWindow) pauseWindow.endedAt = deps.clock();
         // Warm the tts-heavy sidecar (#1579): a cold Chatterbox reload is
         // 30-60s, audible if it lands on the first link after the room fills.
         // Not awaited and never throws — the render path reloads on its own, so
@@ -165,6 +191,8 @@ export function createStreamIdleMonitor(overrides: Partial<{
       ]);
       state = { idle, zeroSince: null };
       startupReleasePending = false;
+      // An adopted pause began no later than now.
+      if (idle) pauseWindow = { startedAt: deps.clock(), endedAt: null };
       deps.setStreamIdle(idle);
     } catch {
       // The surviving mixer may still be paused. Boot stays bounded and
@@ -177,7 +205,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
     }
   }
 
-  return { isIdle, tick, wakeProbe, initialize };
+  return { isIdle, idleWindow, tick, wakeProbe, initialize };
 }
 
 // Drive both cadences. The probe keeps its own guard so a slow one never costs
@@ -209,6 +237,9 @@ export function scheduleStreamIdleMonitor(
 let monitor = createStreamIdleMonitor();
 export function isIdle() {
   return monitor.isIdle();
+}
+export function idleWindow() {
+  return monitor.idleWindow();
 }
 
 export async function startStreamIdleMonitor(onResume: (info: ResumeInfo) => Promise<void> = async () => {}) {
