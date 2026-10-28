@@ -12,9 +12,10 @@ import type { HealthResult, StationApi } from '@/lib/api';
 import { loginRefused } from '@/lib/station-login';
 
 // Sooner than useStationGate's 15 s stuck recheck: a proxy that refuses the
-// login refuses /station-auth too, and the gate would read that 401 as a wrong
-// station password. Stopping first clears the gate's timer. A health check
-// costs no rate limit, so the gap only spaces checks out across stalls.
+// login refuses /station-auth too (stationAuthResult reads its challenge as
+// 'unavailable', not a wrong password), so stopping first clears the gate's
+// timer and saves it a rate-limited attempt that cannot get through. A health
+// check costs no rate limit, so the gap only spaces checks out across stalls.
 const STUCK_RECHECK_MS = 8_000;
 const RECHECK_MIN_GAP_MS = 30_000;
 const PROBE_TIMEOUT_MS = 4_500;

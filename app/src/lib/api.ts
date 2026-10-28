@@ -180,7 +180,7 @@ export function createApi(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ password }),
         });
-        return stationAuthResult(res.status);
+        return stationAuthResult(res.status, res.headers.has('www-authenticate'));
       } catch {
         return stationAuthResult(null);
       }
