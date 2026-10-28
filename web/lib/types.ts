@@ -4,6 +4,13 @@
 
 export type StationLocale = 'en-GB' | 'en-US';
 
+/** GET /state's `streamIdleWindow`: the latest idle pause, as ages in ms when
+ *  the server answered. `endedMsAgo` is null while it lasts. */
+export interface IdleWindow {
+  startedMsAgo: number;
+  endedMsAgo: number | null;
+}
+
 /** `subsonic_id` drives MediaSession artwork via the `/api/cover/:id` proxy;
  *  jingles and scanning have no id. */
 export interface NowPlayingTrack {
@@ -215,6 +222,12 @@ export interface StationState {
    *  `listenerAuth` means the mounts demand the shared listener password
    *  before tune-in. Absent on older controllers = fully public. */
   privacy?: { privatePlayer?: boolean; listenerAuth?: boolean };
+  /** The programme is held by the idle gate (no listeners). */
+  streamIdle?: boolean;
+  /** The latest idle pause as ages in ms when the server answered; null
+   *  before the first since the controller started, absent on an older one
+   *  (#2072, lib/idleSkip.ts). */
+  streamIdleWindow?: IdleWindow | null;
 }
 
 /** `role` arrives as 'segment' for spoken bits and is reclassified to 'voice'
