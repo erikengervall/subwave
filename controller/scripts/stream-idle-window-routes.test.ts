@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer, type Socket } from 'node:net';
 import type { AddressInfo } from 'node:net';
-import test, { mock } from 'node:test';
+import test, { after, mock } from 'node:test';
 
 process.env.ADMIN_USER = 'test-admin';
 process.env.ADMIN_PASS = 'test-pass';
@@ -41,6 +41,12 @@ const mixer = createServer(socket => {
   });
 });
 await new Promise<void>(resolve => mixer.listen(0, '127.0.0.1', resolve));
+// Down already if the restart test ran; a failure before it must not leave the
+// stand-in listening and the file hanging.
+after(() => {
+  if (mixer.listening) mixer.close();
+  for (const s of sockets) s.destroy();
+});
 process.env.LIQUIDSOAP_HOST = '127.0.0.1';
 process.env.LIQUIDSOAP_PORT = String((mixer.address() as AddressInfo).port);
 
