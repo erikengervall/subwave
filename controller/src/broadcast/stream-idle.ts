@@ -264,7 +264,8 @@ export function isIdle() {
 export function idleWindow() {
   return monitor.idleWindow();
 }
-// Called once the controller has restarted the mixer or started the stream.
+// Called after the controller restarts the mixer or starts the stream, whether
+// or not the mixer confirmed it.
 export function noteMountsRestarted() {
   monitor.mountsRestarted();
 }
