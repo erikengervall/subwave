@@ -2,11 +2,16 @@
 // which the web player sizes its skip over a woken station's stale silence.
 // Each stamp errs toward a smaller skip: a pause counts from the mixer
 // acknowledging it, a resume from the command going out, and a pause the
-// monitor can no longer vouch for (new mounts, a command the mixer did not
-// confirm) is withdrawn.
+// monitor can no longer vouch for is withdrawn: new mounts (a restart the
+// controller made, or a committed status poll showing the MP3 mount's
+// stream_start changed or unknown) and a command the mixer did not confirm.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createStreamIdleMonitor } from '../src/broadcast/stream-idle.js';
+
+// Icecast-KH 2.4.0-kh22's stream_start, as the rig gave it.
+const MOUNT_A = '29/Oct/2026:11:58:12 +0000';
+const MOUNT_B = '29/Oct/2026:11:58:22 +0000';
 
 function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
   let now = 50_000;
@@ -14,6 +19,8 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
   let enabled = true;
   let failOn = opts.failOn ?? false;
   let failOff = false;
+  // The MP3 mount's stream_start as the last committed poll saw it.
+  let mounts: string | null = MOUNT_A;
   const monitor = createStreamIdleMonitor({
     clock: () => now,
     idleStatus: () => opts.status ?? Promise.resolve(false),
@@ -27,6 +34,7 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
       if (failOff) throw new Error('telnet unavailable');
     },
     refresh: async () => {},
+    mountStart: () => mounts,
     gatedListenerCount: () => count,
     streamSettings: () => ({ idleWhenEmpty: enabled, idleAfterMinutes: 1 }),
     setStreamIdle: () => {}, warmHeavy: async () => {}, log: () => {},
@@ -38,6 +46,7 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
     enable: (on: boolean) => { enabled = on; },
     failOn: (fail: boolean) => { failOn = fail; },
     failOff: (fail: boolean) => { failOff = fail; },
+    mounts: (m: string | null) => { mounts = m; },
   };
 }
 
@@ -207,5 +216,91 @@ test('a resume the mixer did not confirm withdraws the pause: it may have landed
   f.failOff(false);
   await f.monitor.tick();
   assert.equal(f.monitor.isIdle(), false);
+  assert.equal(f.monitor.idleWindow(), null);
+});
+
+// The stream_start detector: restarts the controller did not cause (a crash,
+// `docker restart`) leave telnet down for ~1.9s, between two 5s ticks.
+
+test('a quiet pause keeps its window while the MP3 mount is unchanged', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  // Ten minutes of 5s idle ticks, each after a committed poll of the same mount.
+  for (let i = 0; i < 120; i++) {
+    f.advance(5_000);
+    await f.monitor.tick();
+    assert.notEqual(f.monitor.idleWindow(), null, `withdrawn at tick ${i}`);
+  }
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 600_000 + 120 * 30, endedMsAgo: null });
+  // Then a restart nobody announced: the next poll shows a new mount.
+  f.mounts(MOUNT_B);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+});
+
+test('a new stream_start withdraws the pause until a re-assert on the new mount', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  f.advance(600_000);
+  // The container restarted between ticks; the next idle poll sees it.
+  f.mounts(MOUNT_B);
+  assert.equal(f.monitor.idleWindow(), null, 'a /state read applies the poll at once');
+  // The tick re-asserts idle on the new mixer, which booted live, and restamps.
+  f.advance(2_000);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+  f.advance(30_000);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 30_030, endedMsAgo: null });
+});
+
+test('a mount that vanished, a missing field or a failed poll withdraws the pause', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  f.advance(600_000);
+  f.mounts(null);
+  await f.monitor.tick();
+  assert.equal(f.monitor.isIdle(), true);
+  assert.equal(f.monitor.idleWindow(), null);
+  // Restamped while still unknown: still not published.
+  f.advance(5_000);
+  await f.monitor.tick();
+  assert.equal(f.monitor.idleWindow(), null);
+  // The mount is readable again (the same one): the next re-assert ties to it.
+  f.mounts(MOUNT_A);
+  f.advance(5_000);
+  assert.equal(f.monitor.idleWindow(), null);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+});
+
+test('the first reading after boot never vouches for a pause adopted before it', async () => {
+  const f = fixture({ status: Promise.resolve(true) });
+  // No committed poll has landed when the pause is adopted.
+  f.mounts(null);
+  await f.monitor.initialize();
+  assert.equal(f.monitor.isIdle(), true);
+  // The first reading arrives; the adopted pause cannot be tied to it.
+  f.mounts(MOUNT_A);
+  f.advance(30_000);
+  assert.equal(f.monitor.idleWindow(), null);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+});
+
+test('a new mount after the room filled withdraws the ended pause too', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  f.advance(60_000);
+  f.listeners(1);
+  await f.monitor.tick();
+  f.advance(5_000);
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 65_030, endedMsAgo: 5_030 });
+  // The 15s monitor's poll, no tick: a /state read applies it.
+  f.mounts(MOUNT_B);
   assert.equal(f.monitor.idleWindow(), null);
 });

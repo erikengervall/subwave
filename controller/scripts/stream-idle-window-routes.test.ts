@@ -50,7 +50,23 @@ after(() => {
 process.env.LIQUIDSOAP_HOST = '127.0.0.1';
 process.env.LIQUIDSOAP_PORT = String((mixer.address() as AddressInfo).port);
 
+// A stand-in Icecast status, so the pause can be tied to the MP3 mount a
+// committed poll saw (bound before config reads ICECAST_STATUS_URL).
+const icecast = createHttpServer((_req, res) => {
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ icestats: { source: {
+    listenurl: 'http://localhost:7702/stream.mp3', listeners: 0, stream_start: '29/Oct/2026:11:58:12 +0000',
+  } } }));
+});
+await new Promise<void>(resolve => icecast.listen(0, '127.0.0.1', resolve));
+after(() => {
+  icecast.closeAllConnections();
+  icecast.close();
+});
+process.env.ICECAST_STATUS_URL = `http://127.0.0.1:${(icecast.address() as AddressInfo).port}/status-json.xsl`;
+
 const express = (await import('express')).default;
+const { refresh } = await import('../src/broadcast/listeners.js');
 const { idleWindow, startStreamIdleMonitor } = await import('../src/broadcast/stream-idle.js');
 const { router } = await import('../src/routes/settings/station.js');
 
@@ -66,6 +82,7 @@ const authorization = `Basic ${Buffer.from('test-admin:test-pass').toString('bas
 // A fresh monitor that adopts the stand-in's pause. Its tick and wake probe
 // are left unscheduled, so nothing but the route moves the window.
 async function pausedMonitor() {
+  await refresh();
   mock.timers.enable({ apis: ['setInterval'] });
   try {
     await startStreamIdleMonitor();

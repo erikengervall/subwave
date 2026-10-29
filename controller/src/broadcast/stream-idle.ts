@@ -1,10 +1,11 @@
 // Pause the music chain after an empty-room timeout while keeping mounts available. Unknown
 // listener counts resume playback; telnet failures retain the current state and retry. Adopt
-// the mixer gate on controller boot. #1256.
+// the mixer gate on controller boot. #1256. The latest pause is published for the web
+// player's idle skip, and only while the MP3 mount is the one it was stamped on (#2072).
 
 import * as settings from '../settings.js';
 import { warmHeavy } from '../audio/ttsHeavyClient.js';
-import { gatedListenerCount, peekListeners, refresh, setStreamIdle } from './listeners.js';
+import { broadcastMountStart, gatedListenerCount, peekListeners, refresh, setStreamIdle } from './listeners.js';
 import { idleOn, idleOff, idleStatus } from './liquidsoap-control.js';
 import { queue } from './queue.js';
 import { nextIdleState, type IdleState } from './stream-idle-pure.js';
@@ -44,6 +45,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
   refresh: () => Promise<unknown>;
   gatedListenerCount: () => number | null;
   peekListeners: () => Promise<number | null>;
+  mountStart: () => string | null;
   streamSettings: () => { idleWhenEmpty?: boolean; idleAfterMinutes?: number } | undefined;
   setStreamIdle: (idle: boolean) => void;
   warmHeavy: () => Promise<unknown>;
@@ -55,6 +57,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
 }> = {}) {
   const deps = {
     idleStatus, idleOn, idleOff, refresh, gatedListenerCount, peekListeners, setStreamIdle, warmHeavy,
+    mountStart: broadcastMountStart,
     // Monotonic: the pause window is only ever differenced, so a wall-clock
     // step must not move it.
     clock: () => performance.now(),
@@ -79,8 +82,33 @@ export function createStreamIdleMonitor(overrides: Partial<{
   // pause records nothing. A pause the monitor can no longer vouch for is
   // withdrawn (mountsRestarted), and while the room stays empty the next
   // re-assert the mixer acknowledges starts a fresh one.
+  //
+  // A pause is tied to the MP3 mount a committed status poll saw before it was
+  // stamped (pauseMounts, Icecast's stream_start), and published only while
+  // the latest committed poll still sees that mount. New mounts are younger than
+  // the buffer, and a restarted mixer boots live, so their burst holds music.
+  // This catches restarts the controller did not cause (a crash, `docker
+  // restart`, a source reconnect), which leave telnet down for only ~1.9s and
+  // so slip between ticks. Unknown never vouches: a failed poll, a missing mount
+  // or field, or a pause stamped before the first poll withdraws it. What is
+  // left is the time from the new mount appearing to the next committed poll
+  // (at most a tick less the ~2s outage, and none when a poll lands in it): a
+  // listener whose read lands there still skips on the old pause.
   let pauseWindow: { startedAt: number; endedAt: number | null } | null = null;
+  let pauseMounts: string | null = null;
   let restampOnReassert = false;
+
+  function stampPause() {
+    pauseWindow = { startedAt: deps.clock(), endedAt: null };
+    pauseMounts = deps.mountStart();
+  }
+
+  // Withdraws the pause once the mounts it was stamped on are gone or unknown.
+  function checkMounts() {
+    if (!pauseWindow) return;
+    const mounts = deps.mountStart();
+    if (mounts === null || mounts !== pauseMounts) mountsRestarted();
+  }
 
   // The track frozen by the pause was chosen for one show; hours later another
   // can be on air. Asked of the track rather than remembered from the pause,
@@ -98,8 +126,10 @@ export function createStreamIdleMonitor(overrides: Partial<{
 
   // Read by GET /state as ages, never timestamps, so a listener's skewed clock
   // cannot misread them. null before the first pause since boot, and once
-  // withdrawn.
+  // withdrawn. Checked against the latest committed poll on every read, so a
+  // poll from any cadence takes effect before the next tick.
   function idleWindow(): IdleWindow | null {
+    checkMounts();
     if (!pauseWindow) return null;
     const now = deps.clock();
     return {
@@ -108,10 +138,10 @@ export function createStreamIdleMonitor(overrides: Partial<{
     };
   }
 
-  // The mounts came back new (a mixer restart, the stream started), or a
-  // command the mixer did not confirm left its gate unknown. New mounts are
-  // younger than any buffer and a restarted mixer boots live, so a new
-  // listener's burst is no longer the pause the window describes.
+  // The mounts came back new (a mixer restart, the stream started, a changed
+  // stream_start), or a command the mixer did not confirm left its gate
+  // unknown. New mounts are younger than any buffer and a restarted mixer boots
+  // live, so a new listener's burst is no longer the pause the window describes.
   function mountsRestarted() {
     pauseWindow = null;
     restampOnReassert = state.idle;
@@ -125,6 +155,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
     // Always read through gatedListenerCount(), never refresh()'s raw return: one
     // timed-out poll out of ~120 per pause released it (#1256).
     if (state.idle && enabled) await deps.refresh();
+    checkMounts();
     const count = deps.gatedListenerCount();
     const input = {
       enabled,
@@ -142,7 +173,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
     try {
       if (action === 'pause') {
         await deps.idleOn();
-        pauseWindow = { startedAt: deps.clock(), endedAt: null };
+        stampPause();
         restampOnReassert = false;
         deps.log(
           'scheduler',
@@ -166,7 +197,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
         );
       } else if (action === 'reassert') {
         await deps.idleOn();
-        if (restampOnReassert) pauseWindow = { startedAt: deps.clock(), endedAt: null };
+        if (restampOnReassert) stampPause();
         restampOnReassert = false;
       }
     } catch {
@@ -215,7 +246,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
       state = { idle, zeroSince: null };
       startupReleasePending = false;
       // An adopted pause began no later than now.
-      if (idle) pauseWindow = { startedAt: deps.clock(), endedAt: null };
+      if (idle) stampPause();
       deps.setStreamIdle(idle);
     } catch {
       // The surviving mixer may still be paused. Boot stays bounded and
