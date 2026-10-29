@@ -91,9 +91,11 @@ export function createStreamIdleMonitor(overrides: Partial<{
   // restart`, a source reconnect), which leave telnet down for only ~1.9s and
   // so slip between ticks. Unknown never vouches: a failed poll, a missing mount
   // or field, or a pause stamped before the first poll withdraws it. What is
-  // left is the time from the new mount appearing to the next committed poll
-  // (at most a tick less the ~2s outage, and none when a poll lands in it): a
-  // listener whose read lands there still skips on the old pause.
+  // left is the time from the new mount appearing to the next committed poll:
+  // while paused at most a tick less the ~2s outage (none when a poll lands in
+  // it), and once the room has filled the 15s monitor's, which matters for the
+  // ~20s an ended pause can still size a skip. A listener whose read lands
+  // there still skips on the old pause.
   let pauseWindow: { startedAt: number; endedAt: number | null } | null = null;
   let pauseMounts: string | null = null;
   let restampOnReassert = false;
