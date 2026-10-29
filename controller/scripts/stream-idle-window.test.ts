@@ -1,7 +1,7 @@
 // GET /state's `streamIdleWindow` (#2072): the latest idle pause as ages, from
 // which the web player sizes its skip over a woken station's stale silence.
-// Every stamp is taken when the mixer acknowledged the command, and anything
-// the monitor cannot vouch for errs toward a smaller skip.
+// Each stamp errs toward a smaller skip: a pause counts from the mixer
+// acknowledging it, and a resume from the command going out.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createStreamIdleMonitor } from '../src/broadcast/stream-idle.js';
@@ -57,7 +57,7 @@ test('null before the first pause since boot', async () => {
   assert.equal(f.monitor.idleWindow(), null);
 });
 
-test('a pause is aged from the mixer acknowledging it, and its resume likewise', async () => {
+test('a pause is aged from the mixer acknowledging it, its resume from the command going out', async () => {
   const f = fixture();
   await f.monitor.initialize();
   await pauseNow(f);
@@ -68,14 +68,15 @@ test('a pause is aged from the mixer acknowledging it, and its resume likewise',
   f.listeners(1);
   await f.monitor.tick();
   assert.equal(f.monitor.isIdle(), false);
-  // Paused 600s plus the resume command's own 30ms.
-  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 600_030, endedMsAgo: 0 });
+  // Paused 600s plus the resume command's own 30ms. The mixer can resume
+  // before it answers, so the resume counts from the command going out.
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 600_030, endedMsAgo: 30 });
 
   f.advance(12_000);
-  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 612_030, endedMsAgo: 12_000 });
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 612_030, endedMsAgo: 12_030 });
   // A re-assert or a live tick moves nothing.
   await f.monitor.tick();
-  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 612_030, endedMsAgo: 12_000 });
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 612_030, endedMsAgo: 12_030 });
 });
 
 test('a new pause replaces the last window', async () => {
@@ -110,7 +111,7 @@ test('disabling idle mid-pause ends the window like a listener would', async () 
   f.advance(40_000);
   f.enable(false);
   await f.monitor.tick();
-  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 40_030, endedMsAgo: 0 });
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 40_030, endedMsAgo: 30 });
 });
 
 test('an adopted pause counts from boot, never earlier', async () => {
@@ -121,7 +122,7 @@ test('an adopted pause counts from boot, never earlier', async () => {
   f.advance(4_000);
   f.listeners(1);
   await f.monitor.tick();
-  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 4_030, endedMsAgo: 0 });
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 4_030, endedMsAgo: 30 });
 });
 
 test('a startup release records nothing: the mixer may never have been paused', async () => {

@@ -71,11 +71,12 @@ export function createStreamIdleMonitor(overrides: Partial<{
   };
   let state: IdleState = { idle: false, zeroSince: null };
   let startupReleasePending = false;
-  // The latest pause, stamped when the mixer acknowledged each command (#2072).
-  // The web player sizes its skip over a woken station's stale silence from it,
-  // so each stamp errs toward a skip that is too small: an adopted pause counts
-  // from boot, and a startup release that may or may not have ended a pause
-  // records nothing.
+  // The latest pause (#2072). The web player sizes its skip over a woken
+  // station's stale silence from it, so each stamp errs toward a skip that is
+  // too small: a pause counts from the mixer acknowledging it, a resume from
+  // the command going out (the mixer can resume before it answers), an adopted
+  // pause from boot, and a startup release that may or may not have ended a
+  // pause records nothing.
   let pauseWindow: { startedAt: number; endedAt: number | null } | null = null;
 
   // The track frozen by the pause was chosen for one show; hours later another
@@ -134,8 +135,9 @@ export function createStreamIdleMonitor(overrides: Partial<{
           `programme idle-paused — no listeners for ${idleAfterMin} min (mounts stay up, resumes on connect)`,
         );
       } else if (action === 'resume') {
+        const sentAt = deps.clock();
         await deps.idleOff();
-        if (state.idle && pauseWindow) pauseWindow.endedAt = deps.clock();
+        if (state.idle && pauseWindow) pauseWindow.endedAt = sentAt;
         // Warm the tts-heavy sidecar (#1579): a cold Chatterbox reload is
         // 30-60s, audible if it lands on the first link after the room fills.
         // Not awaited and never throws — the render path reloads on its own, so
