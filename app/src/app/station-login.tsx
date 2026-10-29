@@ -34,8 +34,9 @@ const OUTCOME_COPY: Record<string, string> = {
   proxy: 'The station refused this login, so it was not saved. Check the username and password.',
   'stream-password':
     "The station's password check refused this password, so nothing was saved. A proxy that guards only the stream may still want this login, and the app can't check that: if you're sure it's right, save it anyway.",
-  unreachable:
-    "Couldn't reach the station to check this login. Save it anyway, or try again once the station is reachable.",
+  // Also a station that answered, but with something that says nothing about
+  // the login (a 403, an unchallenged 401), so never "couldn't reach".
+  unreachable: "Couldn't check this login with the station. Save it anyway, or try again later.",
   'rate-limited':
     'The station is limiting password checks right now, so this login could not be checked. Save it anyway, or wait a few minutes and try again.',
 };

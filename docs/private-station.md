@@ -134,7 +134,8 @@ Things to know:
   a saved station, or **Station login** on the station you're tuned in to. The
   app checks a changed login with the station before saving it: a login the
   proxy refuses is never saved, and one it couldn't check (the station is
-  unreachable) is saved only if you tap **Save anyway**. On a station with the
+  unreachable, or its answer says nothing about the login) is saved only if
+  you tap **Save anyway**. On a station with the
   stream password on and no proxy guarding `/api`, the login's password is
   checked as the stream password. A refusal there offers **Save anyway** too:
   a proxy that guards only the audio stream may still want that login, and the
