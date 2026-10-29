@@ -65,6 +65,16 @@ function setIfChanged<T>(setter: Dispatch<SetStateAction<T>>, next: T): void {
   setter(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
 }
 
+/** The feed's copy of a /state payload. `streamIdleWindow` is published as
+ *  ages, so it differs on every poll once the controller has paused: kept, it
+ *  would defeat setIfChanged and re-render every feed consumer every 5s.
+ *  Nothing renders it, and the player's skip reads /state fresh (#2072). */
+export function feedState(st: StationState): StationState {
+  if (!st || typeof st !== 'object') return st;
+  const { streamIdleWindow: _ages, ...rest } = st;
+  return rest;
+}
+
 // 5s polling of /now-playing + /state + /session, paused while the tab is
 // hidden (with an immediate refetch on return).
 //
@@ -221,7 +231,7 @@ export function useStationFeed({ leadTrimMs = 0 }: StationFeedOptions = {}): Sta
         if (typeof npRes.llmTokens === 'number') setIfChanged<number | null>(setLlmTokens, npRes.llmTokens);
         if (typeof npRes.timezone === 'string' && npRes.timezone) setTimezone(npRes.timezone);
         if (npRes.locale === 'en-US' || npRes.locale === 'en-GB') setLocale(npRes.locale);
-        setIfChanged(setState, stRes);
+        setIfChanged(setState, feedState(stRes));
         if (seRes && Array.isArray(seRes.messages)) {
           rawSessionRef.current = seRes;
           applySession();

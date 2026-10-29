@@ -225,8 +225,9 @@ export interface StationState {
   /** The programme is held by the idle gate (no listeners). */
   streamIdle?: boolean;
   /** The latest idle pause as ages in ms when the server answered; null
-   *  before the first since the controller started, absent on an older one
-   *  (#2072, lib/idleSkip.ts). */
+   *  before the first since the controller started or once the mounts
+   *  restarted, absent on an older one (#2072, lib/idleSkip.ts). useStationFeed's copy drops it: the ages
+   *  change on every poll. */
   streamIdleWindow?: IdleWindow | null;
 }
 
