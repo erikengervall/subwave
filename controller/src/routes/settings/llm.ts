@@ -105,8 +105,9 @@ async function probeKey(
       } catch (err) { return { ok: false, message: briefLlmError(err) }; }
     }
     case 'REQUESTY_API_KEY': {
-      // The model list needs a key, so a bad one is a 401; no model is called,
-      // as in the CLI's probeRequesty.
+      // The model list is public, but a bearer Requesty can't verify is a 403
+      // ("Invalid authorization token"), so a bad key fails here; no model is
+      // called, as in the CLI's probeRequesty.
       const r = await fetch(`${llmProvider.DEFAULT_REQUESTY_BASE_URL}/models`, {
         headers: { Authorization: `Bearer ${value}` },
         signal: AbortSignal.timeout(10000),

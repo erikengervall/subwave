@@ -66,12 +66,16 @@ test('Requesty: a listed model set means the key is valid', async (t) => {
   assert.equal(outbound[0].headers.get('authorization'), 'Bearer rq-good');
 });
 
-test('Requesty: a 401 reads as a rejected key, anything else as the status', async (t) => {
-  stubProvider(t, 401);
-  const rejected = await testKey({ key: 'REQUESTY_API_KEY', value: 'rq-bad' });
-  assert.equal(rejected.ok, false);
-  assert.equal(rejected.message, 'Key rejected — check it\'s correct and active');
-  t.mock.restoreAll();
+// Requesty answers a bad bearer with 403 "Invalid authorization token", not
+// 401, so both must read as a rejected key.
+test('Requesty: a 401 or 403 reads as a rejected key, anything else as the status', async (t) => {
+  for (const status of [401, 403]) {
+    stubProvider(t, status, { error: { origin: 'router', message: 'Invalid authorization token' } });
+    const rejected = await testKey({ key: 'REQUESTY_API_KEY', value: 'rq-bad' });
+    assert.equal(rejected.ok, false, `status ${status}`);
+    assert.equal(rejected.message, 'Key rejected — check it\'s correct and active', `status ${status}`);
+    t.mock.restoreAll();
+  }
   stubProvider(t, 502);
   const failed = await testKey({ key: 'REQUESTY_API_KEY', value: 'rq-any' });
   assert.equal(failed.ok, false);
