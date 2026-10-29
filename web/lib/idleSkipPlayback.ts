@@ -17,13 +17,23 @@
 // wall time spent. An engine that ignores the rate sheds nothing, is put back
 // to 1x after STALL_MS, and reports no trim, leaving the listener exactly where
 // today's player leaves them.
+//
+// The stop is a timer, so a check that runs late (a long task, a throttled
+// tab) overshoots by its lateness times the rate the gap closes at: the shed's
+// rate minus 1, plus 1 more while a wake behind the listener shrinks the
+// target. At 8x that is ~8x the lateness, and a woken-moments-ago listener has
+// only the 1s music margin. So the last SLOW_SHED_SECONDS go at SLOW_RATE: a
+// fast-phase check up to ~185ms late still lands inside it, and a late
+// slow-phase check overshoots by at most 2x its lateness (0.3s at 150ms).
 
 import { idleSkipSeconds, type IdleSkipInput } from './idleSkip';
 import type { IdleWindow } from './types';
 
 export const SKIP_RATE = 8;
-// How often the fast-forward re-checks. Each check can overshoot by
-// (SKIP_RATE - 1) x its lateness, which the cushion and the margin absorb.
+/** The last stretch of the shed, in seconds, runs at SLOW_RATE. */
+export const SLOW_SHED_SECONDS = 1.5;
+export const SLOW_RATE = 2;
+// How often the fast-forward re-checks, at most.
 const CHECK_MS = 50;
 // No measurable progress for this long: the engine is not honouring the rate.
 const STALL_MS = 1500;
@@ -98,8 +108,9 @@ export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): ()
     await fastForward(target);
   })().catch(() => cancel());
 
-  // Shed lag at SKIP_RATE until the (shrinking) target is met, the buffer runs
-  // dry (`waiting`), or the engine stops making progress.
+  // Shed lag at SKIP_RATE, then SLOW_RATE for the last SLOW_SHED_SECONDS, until
+  // the (shrinking) target is met, the buffer runs dry (`waiting`), or the
+  // engine stops making progress.
   function fastForward(target: () => number) {
     return new Promise<void>(resolve => {
       const t0 = now();
@@ -107,6 +118,7 @@ export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): ()
       const shed = () => (el.currentTime - ct0) - (now() - t0) / 1000;
       let best = 0;
       let bestAt = t0;
+      let rate = 1;
       let timer: ReturnType<typeof setTimeout> | null = null;
       const finish = () => {
         if (timer !== null) clearTimeout(timer);
@@ -130,7 +142,13 @@ export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): ()
         } else if (now() - bestAt > STALL_MS) {
           return finish();
         }
-        timer = setTimeout(check, Math.min(CHECK_MS, (left / (SKIP_RATE - 1)) * 1000));
+        const fastLeft = left - SLOW_SHED_SECONDS;
+        const nextRate = fastLeft > 0 ? SKIP_RATE : SLOW_RATE;
+        if (nextRate !== rate) el.playbackRate = rate = nextRate;
+        // Aimed where the phase ends if the target is shrinking too, so the gap
+        // closes at the rate itself and a punctual check never overshoots.
+        const due = fastLeft > 0 ? fastLeft / SKIP_RATE : left / SLOW_RATE;
+        timer = setTimeout(check, Math.min(CHECK_MS, due * 1000));
       };
       el.addEventListener('waiting', finish);
       cleanups.push(() => {
@@ -139,7 +157,6 @@ export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): ()
         resolve();
       });
       fast = true;
-      el.playbackRate = SKIP_RATE;
       check();
     });
   }

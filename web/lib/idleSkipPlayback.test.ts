@@ -2,34 +2,46 @@
 // silence (#2072): it reads /state only after the first audio, leaves a live
 // station's playback untouched, sheds lag by playbackRate and reports what it
 // measured, and an engine that ignores the rate (WebKit's GStreamer build) gets
-// today's behaviour. A fake element runs on the real clock, so each test takes
-// a fraction of a second at a small buffer.
+// today's behaviour. A late check overshoots by at most twice its lateness. A
+// fake element runs on the real clock, so each
+// test takes a second or two at a small buffer.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { SKIP_CUSHION_SECONDS } from './idleSkip';
-import { SKIP_RATE, skipIdleSilence } from './idleSkipPlayback';
+import { MUSIC_MARGIN_SECONDS, SKIP_CUSHION_SECONDS } from './idleSkip';
+import { SKIP_RATE, SLOW_RATE, skipIdleSilence } from './idleSkipPlayback';
 import type { IdleWindow } from './types';
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const IDLE: IdleWindow = { startedMsAgo: 10 * 60_000, endedMsAgo: null };
 
 // A media element whose clock runs at playbackRate, unless the engine ignores it.
+// `lateMs` blocks the main thread that long whenever the skip reads the clock
+// above 1x, which is every check firing that late: the media clock keeps
+// running while no script does.
 class FakeAudio extends EventTarget {
   readyState = 0;
   paused = true;
   honoursRate = true;
+  lateMs = 0;
   rates: number[] = [];
   private base = 0;
   private since = performance.now();
   private rate = 1;
-  get currentTime() {
+  private clock() {
     if (this.paused) return this.base;
     return this.base + ((performance.now() - this.since) / 1000) * (this.honoursRate ? this.rate : 1);
   }
+  get currentTime() {
+    if (this.lateMs && this.rate > 1) {
+      const end = performance.now() + this.lateMs;
+      while (performance.now() < end);
+    }
+    return this.clock();
+  }
   get playbackRate() { return this.rate; }
   set playbackRate(r: number) {
-    this.base = this.currentTime;
+    this.base = this.clock();
     this.since = performance.now();
     this.rate = r;
     this.rates.push(r);
@@ -47,16 +59,29 @@ function run(opts: { buffer?: number; window?: IdleWindow | null; read?: () => P
   const el = new FakeAudio();
   const log: string[] = [];
   const trims: number[] = [];
+  let readAt = 0;
+  let trimAt = 0;
   const cancel = skipIdleSilence(el as unknown as HTMLAudioElement, {
     bufferSeconds: opts.buffer ?? SKIP_CUSHION_SECONDS + 2.5,
     readState: async () => {
       log.push(`read@${el.readyState}`);
+      readAt = performance.now();
       if (opts.read) return opts.read() as never;
       return { streamIdleWindow: opts.window === undefined ? IDLE : opts.window };
     },
-    onTrim: ms => trims.push(ms),
+    onTrim: ms => {
+      trims.push(ms);
+      trimAt = performance.now();
+    },
   });
-  return { el, log, trims, cancel };
+  return { el, log, trims, cancel, readAt: () => readAt, trimAt: () => trimAt };
+}
+
+// How far the shed went past what the planner allowed when it stopped, in s.
+function overshoot(r: ReturnType<typeof run>, buffer: number, endedMsAgo: number | null) {
+  const resumedAgo = ((endedMsAgo ?? 0) + (r.trimAt() - r.readAt())) / 1000;
+  const allowed = buffer - Math.max(SKIP_CUSHION_SECONDS, resumedAgo + MUSIC_MARGIN_SECONDS);
+  return (r.trims[0] ?? 0) / 1000 - allowed;
 }
 
 test('a live station is read after the first audio and its playback left alone', async () => {
@@ -77,12 +102,27 @@ test('a live station is read after the first audio and its playback left alone',
 test('an idle tune-in sheds down to the cushion and reports what it measured', async () => {
   const r = run();
   r.el.start();
-  await sleep(900);
-  assert.deepEqual(r.el.rates, [SKIP_RATE, 1]);
+  // 2.5s to shed: 1s at 8x, then the last 1.5s at 2x.
+  await sleep(2_200);
+  assert.deepEqual(r.el.rates, [SKIP_RATE, SLOW_RATE, 1]);
   assert.equal(r.trims.length, 1);
-  // 2.5s to shed; overshoot is bounded by the check interval.
   const trim = r.trims[0] ?? 0;
-  assert.ok(trim >= 2_500 && trim < 2_900, String(trim));
+  assert.ok(trim >= 2_500 && trim < 2_800, String(trim));
+});
+
+test('a check that runs 150ms late overshoots by at most twice that, well inside the margin', async () => {
+  // The cushion case (still paused at the read: the target holds) and a wake
+  // 8s behind the listener (the target shrinks 1s per second, so the gap
+  // closes faster). At 8x throughout, these overshot by ~0.86s and ~1.03s.
+  for (const [buffer, endedMsAgo] of [[SKIP_CUSHION_SECONDS + 2.5, null], [22, 8_000]] as const) {
+    const r = run({ buffer, window: { startedMsAgo: 10 * 60_000, endedMsAgo } });
+    r.el.lateMs = 150;
+    r.el.start();
+    while (!r.trims.length) await sleep(50);
+    const over = overshoot(r, buffer, endedMsAgo);
+    assert.ok(over < 0.45, `${buffer}s/${endedMsAgo}: overshoot ${over.toFixed(3)}s`);
+    assert.deepEqual(r.el.rates, [SKIP_RATE, SLOW_RATE, 1]);
+  }
 });
 
 test('an engine that ignores the rate is put back to 1x and reports nothing', async () => {
