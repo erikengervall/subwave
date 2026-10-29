@@ -16,6 +16,13 @@
 // than the cushion. Closing up later is fine: the answer shrinks as `now`
 // moves on, so a caller asks again each time it checks.
 //
+// Known limit: the floor holds only while the mounts burst what is advertised.
+// `/now-playing` advertises the setting, but Icecast's <burst-size> is rendered
+// when the broadcast container starts, so an operator who raises bufferSeconds
+// without that restart advertises more than a connection gets. A woken
+// listener's shed then runs on to the live edge, and the start of the music
+// their connection resumed passes fast before `waiting` stops it.
+//
 // The server's inputs are ages measured on its own clock when it answered
 // (`GET /state`'s `streamIdleWindow`), and the client's are readings of one
 // local clock, so the two clocks are never compared and a skewed one cannot
