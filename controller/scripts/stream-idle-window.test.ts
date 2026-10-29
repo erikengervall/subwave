@@ -12,6 +12,7 @@ import { createStreamIdleMonitor } from '../src/broadcast/stream-idle.js';
 // Icecast-KH 2.4.0-kh22's stream_start, as the rig gave it.
 const MOUNT_A = '29/Oct/2026:11:58:12 +0000';
 const MOUNT_B = '29/Oct/2026:11:58:22 +0000';
+const MOUNT_C = '29/Oct/2026:11:58:31 +0000';
 
 function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
   let now = 50_000;
@@ -21,6 +22,8 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
   let failOff = false;
   // The MP3 mount's stream_start as the last committed poll saw it.
   let mounts: string | null = MOUNT_A;
+  // What the coming refresh() polls will see, in order; none queued, unchanged.
+  const polls: (string | null)[] = [];
   const monitor = createStreamIdleMonitor({
     clock: () => now,
     idleStatus: () => opts.status ?? Promise.resolve(false),
@@ -33,7 +36,9 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
       now += 30;
       if (failOff) throw new Error('telnet unavailable');
     },
-    refresh: async () => {},
+    refresh: async () => {
+      if (polls.length) mounts = polls.shift() ?? null;
+    },
     mountStart: () => mounts,
     gatedListenerCount: () => count,
     streamSettings: () => ({ idleWhenEmpty: enabled, idleAfterMinutes: 1 }),
@@ -47,6 +52,7 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
     failOn: (fail: boolean) => { failOn = fail; },
     failOff: (fail: boolean) => { failOff = fail; },
     mounts: (m: string | null) => { mounts = m; },
+    nextPolls: (...m: (string | null)[]) => { polls.push(...m); },
   };
 }
 
@@ -289,6 +295,31 @@ test('the first reading after boot never vouches for a pause adopted before it',
   assert.equal(f.monitor.idleWindow(), null);
   await f.monitor.tick();
   assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+});
+
+// A poll after the mixer answered may see a mixer that restarted since and
+// booted live, so tying the stamp to it would vouch for a pause that mixer
+// never held.
+test('a stamp is tied to a poll from before the mixer answered, never a later one', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  // The mixer answers idle_on, then restarts before the next committed poll.
+  f.nextPolls(MOUNT_B);
+  await pauseNow(f);
+  f.advance(5_000);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null }, 'restamped on the new mixer');
+  // The same for a restamp: a failed poll withdraws the pause, the next sees
+  // the same mount, and the mixer restarts after answering the re-assert.
+  f.mounts(null);
+  assert.equal(f.monitor.idleWindow(), null);
+  f.nextPolls(MOUNT_B, MOUNT_C);
+  f.advance(5_000);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+  f.advance(5_000);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null }, 'restamped on the newer mixer');
 });
 
 test('a new mount after the room filled withdraws the ended pause too', async () => {
