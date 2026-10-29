@@ -112,9 +112,11 @@ export function usePlayer(
   // StreamRecovery. RemotePause/RemoteStop are handled here as well as in
   // service.ts: the Stopped/Ended state a lock-screen pause produces is
   // indistinguishable from a stream failure, so without this the error
-  // backoff reconnects 500ms later.
+  // backoff reconnects 500ms later. RemoteDuck only tells the recovery an iOS
+  // interruption began or ended: iOS pauses the audio, RNTP resumes it
+  // (autoHandleInterruptions), and nothing here touches playback.
   useTrackPlayerEvents(
-    [Event.PlaybackState, Event.PlaybackError, Event.RemotePause, Event.RemoteStop],
+    [Event.PlaybackState, Event.PlaybackError, Event.RemotePause, Event.RemoteStop, Event.RemoteDuck],
     (event) => {
       plog(
         `event ${event.type}${'state' in event ? ` state=${String(event.state)}` : ''}${
@@ -128,6 +130,10 @@ export function usePlayer(
         tunedInRef.current = false;
         setTunedIn(false);
         setStatus('idle');
+        return;
+      }
+      if (event.type === Event.RemoteDuck) {
+        recoveryRef.current?.onDuck(event.paused, event.permanent);
         return;
       }
       if (event.type === Event.PlaybackError) {

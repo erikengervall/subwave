@@ -7,7 +7,9 @@
 // (TrackPlayer.getProgress), as the web player's advancingSince() does (#1232).
 // A native state event cannot decide it alone: Buffering is an instant, not a
 // verdict, and the last state JS hears can be stale (SwiftAudioEx's `.ready` is
-// a check-then-set that can land after `.playing`).
+// a check-then-set that can land after `.playing`). An iOS audio interruption
+// (a call, Siri) stops AVPlayer with no state event at all, so no check or
+// automatic reload runs while RemoteDuck says one lasts (onDuck).
 //
 // One reload runs at a time. Every timer and async continuation carries the
 // listening session and reload attempt it was armed in, and does nothing once
@@ -130,6 +132,8 @@ export class StreamRecovery {
   // The episode whose deadline an error's backoff has already set.
   private erroredEpisode = -1;
   private reloading = false;
+  // Between an interruption's RemoteDuck pause and its end.
+  private interrupted = false;
   // An explicit reload (tune, format) asked for while one was in flight.
   private queued: ReloadReason | null = null;
   private lastState: string | null = null;
@@ -167,6 +171,8 @@ export class StreamRecovery {
       case 'playing':
         this.endEpisode();
         this.retries = 0;
+        // Audio is back, whether or not an interruption's end was reported.
+        this.interrupted = false;
         return;
       case 'buffering':
       case 'loading':
@@ -188,6 +194,29 @@ export class StreamRecovery {
    *  to the item being replaced; the new item's own Loading arms the watchdog. */
   onError(): void {
     if (this.active && !this.reloading) this.armRetry();
+  }
+
+  /** RNTP's RemoteDuck: on iOS, an audio-session interruption (a call, Siri,
+   *  an alarm). RNTP pauses nothing for it, so AVPlayer stops with no state
+   *  event and the clock stands still for as long as it lasts. A check would
+   *  reload, and a new item can't play during it either, so it would be
+   *  reloaded every WATCHDOG_MS until the call ended: nothing is armed until
+   *  it ends. `paused: false` is the end with playback resumed by RNTP
+   *  (autoHandleInterruptions), and a stall that outlived it sends no new
+   *  state, so the clock is checked again. `permanent` is an end iOS wants
+   *  left paused. Android doesn't emit it here: ExoPlayer takes audio focus. */
+  onDuck(paused: boolean, permanent = false): void {
+    const was = this.interrupted;
+    this.interrupted = paused && !permanent;
+    if (this.interrupted) {
+      this.deps.log('interrupted: no checks or reloads until it ends');
+      this.endEpisode();
+      // The clock stands still on purpose, so stalls either side don't compare.
+      this.flaps = [];
+    } else if (was) {
+      this.deps.log(`interruption over${paused ? ', left paused' : ', resumed: checking the clock'}`);
+      if (!paused) this.arm('watchdog', WATCHDOG_MS);
+    }
   }
 
   /** The device regained a network link while the UI isn't showing playback:
@@ -214,6 +243,9 @@ export class StreamRecovery {
   private begin(): void {
     this.session += 1;
     this.active = true;
+    // The listener asking for audio. iOS doesn't promise an interruption's
+    // end, and a missed one mustn't leave the watchdog off for good.
+    this.interrupted = false;
     this.reset();
   }
 
@@ -257,7 +289,7 @@ export class StreamRecovery {
   /** Schedule a media-clock check. An earlier pending check stands unless
    *  `replace`. Returns whether this call set the deadline. */
   private arm(reason: CheckReason, delay: number, baseline?: ProgressSample, replace = false): boolean {
-    if (!this.active) return false;
+    if (!this.active || this.interrupted) return false;
     const due = this.now() + delay;
     if (this.check && this.check.due <= due && !replace) return false;
     if (this.check) {
@@ -332,6 +364,12 @@ export class StreamRecovery {
 
   private async reload(reason: ReloadReason, detail: string | null, queueIfBusy = false): Promise<void> {
     if (!this.active) return;
+    // A tune or retune still runs during an interruption; nothing automatic
+    // does (a churn trip or a regained link), since the new item can't play.
+    if (this.interrupted && !queueIfBusy) {
+      this.deps.log(`reload [${reason}] skipped: audio interrupted`);
+      return;
+    }
     if (this.reloading) {
       if (queueIfBusy) this.queued = reason;
       this.deps.log(`reload [${reason}] skipped: one in flight${queueIfBusy ? ', queued after it' : ''}`);

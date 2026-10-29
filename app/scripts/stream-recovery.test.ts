@@ -338,6 +338,83 @@ test('a lock-screen resume is adopted without a reload, and still watched', asyn
   assert.deepEqual(h.reloads, ['watchdog']);
 });
 
+test('an interruption reloads nothing while it lasts, then checks the clock when it ends', async (t) => {
+  const h = setup(t);
+  await onAir(h);
+  // A stall is pending when a call comes in. iOS stops AVPlayer with no state
+  // event, and a new item can't play during the call either.
+  h.recovery.onState('buffering');
+  h.clock.freeze();
+  await h.tick(2000);
+  h.recovery.onDuck(true);
+  let seen = h.reloads.length;
+  for (let elapsed = 0; elapsed < 2 * 60_000; elapsed += 250) {
+    while (seen < h.reloads.length) {
+      seen += 1;
+      h.recovery.onState('loading');
+    }
+    if (elapsed === 30_000) h.recovery.linkRegained(); // Wi-Fi to cellular mid-call
+    await h.tick(250);
+  }
+  assert.deepEqual(h.reloads, ['tune'], 'nothing reloads during the call');
+  // RNTP resumes the item, but the stall outlived the call: no new state.
+  h.recovery.onDuck(false);
+  await h.tick(WATCHDOG_MS + 250);
+  assert.deepEqual(h.reloads, ['tune', 'watchdog']);
+});
+
+test('an interruption that ends with the audio back is not reloaded, or watched on', async (t) => {
+  const h = setup(t);
+  await onAir(h);
+  h.recovery.onDuck(true);
+  h.clock.freeze();
+  await h.tick(60_000);
+  // RNTP resumes the item. The native state never left Playing: no event.
+  h.recovery.onDuck(false);
+  h.clock.run();
+  await h.tick(30_000);
+  assert.deepEqual(h.reloads, ['tune']);
+  assert.equal(h.logs.filter((l) => l.startsWith('hold [watchdog] state=playing')).length, 1);
+});
+
+test('an interruption iOS ends without a resume leaves the player paused', async (t) => {
+  const h = setup(t);
+  await onAir(h);
+  h.recovery.onDuck(true);
+  h.clock.freeze();
+  await h.tick(30_000);
+  h.recovery.onDuck(true, true);
+  await h.tick(60_000);
+  assert.deepEqual(h.reloads, ['tune']);
+});
+
+test('a missed interruption end does not leave the watchdog off', async (t) => {
+  const h = setup(t);
+  await onAir(h);
+  h.recovery.onDuck(true); // iOS doesn't promise the end
+  h.clock.freeze();
+  await h.tick(30_000);
+  // A lock-screen Play reloads through service.ts, and it plays.
+  h.recovery.onState('loading');
+  h.clock.jumpTo(0);
+  h.clock.run();
+  h.recovery.onState('playing');
+  await h.tick(5000);
+  h.recovery.onState('buffering');
+  h.clock.freeze();
+  await h.tick(WATCHDOG_MS + 250);
+  assert.deepEqual(h.reloads, ['tune', 'watchdog']);
+
+  // Or the listener tunes in again.
+  h.recovery.onDuck(true);
+  h.recovery.tuneOut();
+  h.recovery.tuneIn();
+  await settle();
+  h.recovery.onState('loading');
+  await h.tick(WATCHDOG_MS + 250);
+  assert.deepEqual(h.reloads, ['tune', 'watchdog', 'tune', 'watchdog']);
+});
+
 test('a watchdog armed before a tune-out never fires', async (t) => {
   const h = setup(t);
   await onAir(h);
