@@ -1,8 +1,9 @@
 // Edit a saved station's login (#1873): the HTTP Basic Auth pair a reverse
 // proxy may ask for, never SUB/WAVE's own station password (#478), which this
 // screen can only forget. A changed login is checked with the station first
-// (checkStationLogin): a refused one is never saved, and one that could not be
-// checked is saved only on "Save anyway".
+// (checkStationLogin): one a proxy refuses is never saved, and one the stream
+// password refused or that could not be checked is saved only on "Save
+// anyway" (saveAnywayOffered).
 
 import { router, useLocalSearchParams } from 'expo-router';
 import { KeyRound, X } from 'lucide-react-native';
@@ -22,7 +23,7 @@ import LoginFields, { confirmCleartextLogin } from '@/components/LoginFields';
 import { useStation } from '@/config/StationContext';
 import { createApi, type HealthResult } from '@/lib/api';
 import { splitStationAddress, type StationCredentials } from '@/lib/station-credentials';
-import { checkStationLogin, type LoginCheck } from '@/lib/station-login';
+import { checkStationLogin, saveAnywayOffered, type LoginCheck } from '@/lib/station-login';
 import { useTheme } from '@/theme/ThemeContext';
 
 const PROBE_TIMEOUT_MS = 4500;
@@ -32,7 +33,7 @@ const stripProto = (u: string) => u.replace(/^https?:\/\//, '');
 const OUTCOME_COPY: Record<string, string> = {
   proxy: 'The station refused this login, so it was not saved. Check the username and password.',
   'stream-password':
-    "This station doesn't ask for a login: it reads the password here as its station password, and that password was not accepted. Nothing was saved.",
+    "The station's password check refused this password, so nothing was saved. A proxy that guards only the stream may still want this login, and the app can't check that: if you're sure it's right, save it anyway.",
   unreachable:
     "Couldn't reach the station to check this login. Save it anyway, or try again once the station is reachable.",
   'rate-limited':
@@ -307,12 +308,16 @@ export default function StationLogin() {
                 </Text>
               </Pressable>
 
-              {outcome?.verdict === 'unreachable' ? (
+              {outcome && saveAnywayOffered(outcome) ? (
                 <Pressable
                   onPress={saveAnyway}
                   disabled={busy}
                   accessibilityRole="button"
-                  accessibilityLabel="Save anyway without checking"
+                  accessibilityLabel={
+                    outcome.verdict === 'rejected'
+                      ? "Save anyway, although the station's password check refused it"
+                      : 'Save anyway without checking'
+                  }
                   className="items-center justify-center"
                   style={{ marginTop: 10, borderWidth: 1, borderColor: colors.accent, paddingVertical: 13, opacity: busy ? 0.45 : 1 }}
                 >

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { HealthResult } from '../src/lib/api.ts';
 import type { StationCredentials } from '../src/lib/station-credentials.ts';
-import { checkStationLogin, loginRefused } from '../src/lib/station-login.ts';
+import { checkStationLogin, loginRefused, saveAnywayOffered } from '../src/lib/station-login.ts';
 import type { StationAuthResult } from '../src/lib/station-password.ts';
 
 test('only a 401 with a login challenge is a refused login', () => {
@@ -190,4 +190,14 @@ test('a denied password with no anonymous answer cannot tell a proxy from none',
       JSON.stringify(answer),
     );
   }
+});
+
+test('Save anyway is offered for any verdict but a proxy refusal', () => {
+  assert.equal(saveAnywayOffered({ verdict: 'accepted' }), false);
+  // The proxy reads this very login, and it said no.
+  assert.equal(saveAnywayOffered({ verdict: 'rejected', by: 'proxy' }), false);
+  // A proxy that guards only the stream may still want it, unseen.
+  assert.equal(saveAnywayOffered({ verdict: 'rejected', by: 'stream-password' }), true);
+  assert.equal(saveAnywayOffered({ verdict: 'unreachable', rateLimited: false }), true);
+  assert.equal(saveAnywayOffered({ verdict: 'unreachable', rateLimited: true }), true);
 });

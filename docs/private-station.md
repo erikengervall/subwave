@@ -133,10 +133,12 @@ Things to know:
 - **A saved login can be changed or removed.** In **Stations**, tap the key on
   a saved station, or **Station login** on the station you're tuned in to. The
   app checks a changed login with the station before saving it: a login the
-  station refuses is never saved, and one it couldn't check (the station is
-  unreachable) is saved only if you tap **Save anyway**. On a station with no
-  proxy login but the stream password on, the login's password is checked as
-  the stream password.
+  proxy refuses is never saved, and one it couldn't check (the station is
+  unreachable) is saved only if you tap **Save anyway**. On a station with the
+  stream password on and no proxy guarding `/api`, the login's password is
+  checked as the stream password. A refusal there offers **Save anyway** too:
+  a proxy that guards only the audio stream may still want that login, and the
+  app has no way to ask it.
 - **A login the station stops accepting stops the player.** When the proxy
   answers the saved login with a 401 that carries a `WWW-Authenticate`
   challenge (what an HTTP Basic Auth proxy sends for a wrong login), the player

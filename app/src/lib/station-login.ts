@@ -29,10 +29,21 @@ export function loginRefused(result: HealthResult): boolean {
 export type LoginCheck =
   /** Nothing that reads the login refused it: save it. */
   | { verdict: 'accepted' }
-  /** Refused, so never saved. `by` names the check that refused it. */
+  /** Refused, so not saved unless saveAnywayOffered. `by` names the check
+   *  that refused it. */
   | { verdict: 'rejected'; by: 'proxy' | 'stream-password' }
   /** Not checked: save it only when the listener says "Save anyway". */
   | { verdict: 'unreachable'; rateLimited: boolean };
+
+/** Whether the listener may still save the login after this check. Never
+ *  after a proxy's refusal: that proxy reads this very login, and it said no.
+ *  After a stream-password refusal, yes: a proxy that guards only the stream
+ *  may still want this login, and no check can see that proxy (the stream is
+ *  never probed). An unchecked login is the listener's call too. Either way
+ *  only an explicit "Save anyway" saves it. */
+export function saveAnywayOffered(check: LoginCheck): boolean {
+  return check.verdict === 'unreachable' || (check.verdict === 'rejected' && check.by === 'stream-password');
+}
 
 const ACCEPTED: LoginCheck = { verdict: 'accepted' };
 const UNREACHABLE: LoginCheck = { verdict: 'unreachable', rateLimited: false };
