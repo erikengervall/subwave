@@ -305,6 +305,8 @@ test('a station that keeps failing is backed off to the ceiling, past the watchd
     await h.tick(250);
   }
   const gaps = at.slice(1).map((ms, i) => ms - at[i]);
+  // PlaybackError and State.Error are one failure: the first retry is 500ms.
+  assert.deepEqual(gaps.slice(0, 4), [500, 1000, 2000, 4000], `gaps ${gaps.join(', ')}`);
   assert.ok(gaps[gaps.length - 1] >= RECONNECT_MAX_MS, `gaps ${gaps.join(', ')}`);
   assert.ok(h.reloads.length <= 11, `${h.reloads.length} loads in 4 minutes`);
 });
