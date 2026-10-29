@@ -132,7 +132,8 @@ export class StreamRecovery {
   // The episode whose deadline an error's backoff has already set.
   private erroredEpisode = -1;
   private reloading = false;
-  // Between an interruption's RemoteDuck pause and its end.
+  // Between an interruption's RemoteDuck pause and its end, or the next sign
+  // the listener wants audio (a tune-in, a Playing, a load from service.ts).
   private interrupted = false;
   // An explicit reload (tune, format) asked for while one was in flight.
   private queued: ReloadReason | null = null;
@@ -176,6 +177,10 @@ export class StreamRecovery {
         return;
       case 'buffering':
       case 'loading':
+        // A new item this module didn't load is the listener asking for audio
+        // again (a lock-screen or headset Play reloads through service.ts), so
+        // like a tune-in it ends an interruption whose end iOS never reported.
+        if (state === 'loading' && !this.reloading) this.interrupted = false;
         // Only stalls out of Playing count. Loading always means a new item (a
         // tune-in or reload, both platforms), never a mid-stream stall.
         if (prev === 'playing' && state === 'buffering') this.recordFlap();

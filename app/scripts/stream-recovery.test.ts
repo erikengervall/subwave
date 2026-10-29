@@ -396,9 +396,7 @@ test('a missed interruption end does not leave the watchdog off', async (t) => {
   h.recovery.onDuck(true); // iOS doesn't promise the end
   h.clock.freeze();
   await h.tick(30_000);
-  // A lock-screen Play reloads through service.ts, and it plays.
-  h.recovery.onState('loading');
-  h.clock.jumpTo(0);
+  // The audio comes back with neither an end nor a new item reported.
   h.clock.run();
   h.recovery.onState('playing');
   await h.tick(5000);
@@ -406,15 +404,46 @@ test('a missed interruption end does not leave the watchdog off', async (t) => {
   h.clock.freeze();
   await h.tick(WATCHDOG_MS + 250);
   assert.deepEqual(h.reloads, ['tune', 'watchdog']);
+});
 
-  // Or the listener tunes in again.
+test('a tune-in ends an interruption whose end was missed', async (t) => {
+  const h = setup(t, { holdReloads: true });
   h.recovery.onDuck(true);
-  h.recovery.tuneOut();
   h.recovery.tuneIn();
   await settle();
-  h.recovery.onState('loading');
+  h.recovery.onState('loading'); // its own item, reported while the load is in flight
+  h.held[0].resolve();
   await h.tick(WATCHDOG_MS + 250);
-  assert.deepEqual(h.reloads, ['tune', 'watchdog', 'tune', 'watchdog']);
+  assert.deepEqual(h.reloads, ['tune', 'watchdog']);
+  h.held[1].resolve();
+});
+
+test('a lock-screen Play after a missed interruption end is watched before it plays', async (t) => {
+  const h = setup(t);
+  await onAir(h);
+  h.recovery.onDuck(true); // another app's audio took over, and iOS never ends it
+  h.clock.freeze();
+  await h.tick(30_000);
+  // service.ts reloads the stream, but the new item never starts.
+  h.recovery.onState('loading');
+  h.clock.jumpTo(0);
+  await h.tick(WATCHDOG_MS + 250);
+  assert.deepEqual(h.reloads, ['tune', 'watchdog']);
+});
+
+test("an interruption that begins mid-reload outlasts that reload's own Loading", async (t) => {
+  const h = setup(t, { holdReloads: true });
+  h.recovery.tuneIn();
+  await settle();
+  h.recovery.onDuck(true);
+  h.recovery.onState('loading'); // the reload's new item, reported after the duck
+  h.held[0].resolve();
+  await settle();
+  await h.tick(2 * 60_000);
+  assert.deepEqual(h.reloads, ['tune'], 'nothing reloads during the call');
+  h.recovery.onDuck(false);
+  await h.tick(WATCHDOG_MS + 250);
+  assert.deepEqual(h.reloads, ['tune', 'watchdog']);
 });
 
 test('a watchdog armed before a tune-out never fires', async (t) => {
