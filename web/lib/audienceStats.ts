@@ -74,3 +74,121 @@ export function groupConnectionsByDevice(conns: ListenerConnection[]): DeviceGro
     }))
     .sort((a, b) => b.count - a.count || b.avgSeconds - a.avgSeconds);
 }
+
+// listener trend chart
+
+export interface TimedCount {
+  ms: number; // epoch ms
+  count: number;
+}
+
+// The chart places samples by time, not by index: the series has gaps wherever
+// the controller was down, and an index axis would slide every later reading
+// left of where it happened. Unparseable timestamps are dropped.
+export function timedSamples(samples: ListenerSample[]): TimedCount[] {
+  const out: TimedCount[] = [];
+  for (const s of samples) {
+    const ms = new Date(s.t).getTime();
+    if (!Number.isFinite(ms)) continue;
+    out.push({ ms, count: Number.isFinite(s.count) ? s.count : 0 });
+  }
+  return out.sort((a, b) => a.ms - b.ms);
+}
+
+// Index of the sample closest in time to `ms`; -1 for an empty series. The
+// series must be sorted (timedSamples sorts it).
+export function nearestIndex(series: TimedCount[], ms: number): number {
+  if (!series.length) return -1;
+  let lo = 0;
+  let hi = series.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if ((series[mid]?.ms ?? 0) < ms) lo = mid + 1;
+    else hi = mid;
+  }
+  const prev = series[lo - 1];
+  const here = series[lo];
+  if (prev && here && ms - prev.ms <= here.ms - ms) return lo - 1;
+  return lo;
+}
+
+// The most recent sample at the series maximum, so "peak at …" names the latest
+// time the station was that busy rather than the first.
+export function peakSample(series: TimedCount[]): TimedCount | null {
+  let best: TimedCount | null = null;
+  for (const s of series) {
+    if (!best || s.count >= best.count) best = s;
+  }
+  return best;
+}
+
+// Spans past this read as days: axis ticks fall on local midnights and
+// readings carry the weekday.
+const DAY_AXIS_MS = 36 * 3_600_000;
+
+export function isLongSpan(spanMs: number): boolean {
+  return spanMs > DAY_AXIS_MS;
+}
+
+// "14:20", or "Tue 14:20" when the chart spans days. Local time, like the
+// hour-of-day chart.
+export function fmtSampleTime(ms: number, long: boolean): string {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return long ? `${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}` : time;
+}
+
+export interface AxisTick {
+  ms: number;
+  frac: number; // 0–1 across [t0, t1]
+  label: string;
+}
+
+// Time-axis ticks on round local times: every 6 hours ("06:00") for a day-long
+// span, every local midnight ("Tue") past that. Ticks hugging either edge are
+// dropped so their centred labels are not clipped by the card.
+export function timeTicks(t0: number, t1: number): AxisTick[] {
+  const span = t1 - t0;
+  if (!(span > 0)) return [];
+  const long = isLongSpan(span);
+  const d = new Date(t0);
+  d.setMinutes(0, 0, 0);
+  if (long) d.setHours(0);
+  const step = long ? 24 : 6;
+  // Advance to the first round boundary at or after t0.
+  while (d.getTime() < t0 || d.getHours() % step !== 0) d.setHours(d.getHours() + 1);
+  const ticks: AxisTick[] = [];
+  for (; d.getTime() <= t1; d.setHours(d.getHours() + step)) {
+    const ms = d.getTime();
+    const frac = (ms - t0) / span;
+    if (frac < 0.04 || frac > 0.96) continue;
+    ticks.push({
+      ms,
+      frac,
+      label: long
+        ? d.toLocaleDateString('en-GB', { weekday: 'short' })
+        : d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+    });
+  }
+  return ticks;
+}
+
+// History is one row per wall-clock minute, and the controller skips a minute
+// it could not read so an outage stays a gap (broadcast/listeners.ts). The chart
+// honours that by breaking the line wherever rows are further apart than this.
+export const SAMPLE_GAP_MS = 5 * 60_000;
+
+export function splitAtGaps(series: TimedCount[], gapMs = SAMPLE_GAP_MS): TimedCount[][] {
+  const runs: TimedCount[][] = [];
+  let run: TimedCount[] = [];
+  for (const s of series) {
+    const prev = run[run.length - 1];
+    if (prev && s.ms - prev.ms > gapMs) {
+      runs.push(run);
+      run = [];
+    }
+    run.push(s);
+  }
+  if (run.length) runs.push(run);
+  return runs;
+}
