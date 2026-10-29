@@ -461,8 +461,8 @@ router.get('/state', (req, res) => {
     // Programme paused by the idle gate (zero listeners), not broken.
     streamIdle: isIdle(),
     // The latest idle pause as ages in ms ({ startedMsAgo, endedMsAgo }, null
-    // before the first since boot). The web player sizes its skip over a woken
-    // station's stale silence from it (#2072).
+    // before the first since boot or once the mounts restarted). The web player
+    // sizes its skip over a woken station's stale silence from it (#2072).
     streamIdleWindow: idleWindow(),
     // Music chain starved (#1300), emergency loop on air. Not streamIdle, which
     // is a deliberate pause.

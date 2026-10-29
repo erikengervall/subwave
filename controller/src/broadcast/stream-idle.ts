@@ -76,8 +76,11 @@ export function createStreamIdleMonitor(overrides: Partial<{
   // too small: a pause counts from the mixer acknowledging it, a resume from
   // the command going out (the mixer can resume before it answers), an adopted
   // pause from boot, and a startup release that may or may not have ended a
-  // pause records nothing.
+  // pause records nothing. A pause the monitor can no longer vouch for is
+  // withdrawn (mountsRestarted), and while the room stays empty the next
+  // re-assert the mixer acknowledges starts a fresh one.
   let pauseWindow: { startedAt: number; endedAt: number | null } | null = null;
+  let restampOnReassert = false;
 
   // The track frozen by the pause was chosen for one show; hours later another
   // can be on air. Asked of the track rather than remembered from the pause,
@@ -94,7 +97,8 @@ export function createStreamIdleMonitor(overrides: Partial<{
   }
 
   // Read by GET /state as ages, never timestamps, so a listener's skewed clock
-  // cannot misread them. null before the first pause since boot.
+  // cannot misread them. null before the first pause since boot, and once
+  // withdrawn.
   function idleWindow(): IdleWindow | null {
     if (!pauseWindow) return null;
     const now = deps.clock();
@@ -102,6 +106,15 @@ export function createStreamIdleMonitor(overrides: Partial<{
       startedMsAgo: Math.round(now - pauseWindow.startedAt),
       endedMsAgo: pauseWindow.endedAt === null ? null : Math.round(now - pauseWindow.endedAt),
     };
+  }
+
+  // The mounts came back new (a mixer restart, the stream started), or a
+  // command the mixer did not confirm left its gate unknown. New mounts are
+  // younger than any buffer and a restarted mixer boots live, so a new
+  // listener's burst is no longer the pause the window describes.
+  function mountsRestarted() {
+    pauseWindow = null;
+    restampOnReassert = state.idle;
   }
 
   async function tick() {
@@ -130,6 +143,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
       if (action === 'pause') {
         await deps.idleOn();
         pauseWindow = { startedAt: deps.clock(), endedAt: null };
+        restampOnReassert = false;
         deps.log(
           'scheduler',
           `programme idle-paused — no listeners for ${idleAfterMin} min (mounts stay up, resumes on connect)`,
@@ -138,6 +152,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
         const sentAt = deps.clock();
         await deps.idleOff();
         if (state.idle && pauseWindow) pauseWindow.endedAt = sentAt;
+        restampOnReassert = false;
         // Warm the tts-heavy sidecar (#1579): a cold Chatterbox reload is
         // 30-60s, audible if it lands on the first link after the room fills.
         // Not awaited and never throws — the render path reloads on its own, so
@@ -151,9 +166,15 @@ export function createStreamIdleMonitor(overrides: Partial<{
         );
       } else if (action === 'reassert') {
         await deps.idleOn();
+        if (restampOnReassert) pauseWindow = { startedAt: deps.clock(), endedAt: null };
+        restampOnReassert = false;
       }
     } catch {
-      return; // telnet unreachable — keep the current state, retry next tick
+      // Telnet unreachable — keep the current state, retry next tick. Mid-pause
+      // the mixer may be restarting (it boots live) or have taken an unanswered
+      // idle_off, so the pause is withdrawn.
+      if (state.idle) mountsRestarted();
+      return;
     }
     // A forced release overrides the whole transition, not just its command.
     // Start the empty-room clock only after idle_off succeeds, even if retries
@@ -207,7 +228,7 @@ export function createStreamIdleMonitor(overrides: Partial<{
     }
   }
 
-  return { isIdle, idleWindow, tick, wakeProbe, initialize };
+  return { isIdle, idleWindow, mountsRestarted, tick, wakeProbe, initialize };
 }
 
 // Drive both cadences. The probe keeps its own guard so a slow one never costs
@@ -242,6 +263,10 @@ export function isIdle() {
 }
 export function idleWindow() {
   return monitor.idleWindow();
+}
+// Called once the controller has restarted the mixer or started the stream.
+export function noteMountsRestarted() {
+  monitor.mountsRestarted();
 }
 
 export async function startStreamIdleMonitor(onResume: (info: ResumeInfo) => Promise<void> = async () => {}) {

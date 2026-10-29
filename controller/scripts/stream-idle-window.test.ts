@@ -1,7 +1,9 @@
 // GET /state's `streamIdleWindow` (#2072): the latest idle pause as ages, from
 // which the web player sizes its skip over a woken station's stale silence.
 // Each stamp errs toward a smaller skip: a pause counts from the mixer
-// acknowledging it, and a resume from the command going out.
+// acknowledging it, a resume from the command going out, and a pause the
+// monitor can no longer vouch for (new mounts, a command the mixer did not
+// confirm) is withdrawn.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createStreamIdleMonitor } from '../src/broadcast/stream-idle.js';
@@ -11,6 +13,7 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
   let count: number | null = 0;
   let enabled = true;
   let failOn = opts.failOn ?? false;
+  let failOff = false;
   const monitor = createStreamIdleMonitor({
     clock: () => now,
     idleStatus: () => opts.status ?? Promise.resolve(false),
@@ -19,7 +22,10 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
       now += 30;
       if (failOn) throw new Error('telnet unavailable');
     },
-    idleOff: async () => { now += 30; },
+    idleOff: async () => {
+      now += 30;
+      if (failOff) throw new Error('telnet unavailable');
+    },
     refresh: async () => {},
     gatedListenerCount: () => count,
     streamSettings: () => ({ idleWhenEmpty: enabled, idleAfterMinutes: 1 }),
@@ -31,6 +37,7 @@ function fixture(opts: { status?: Promise<boolean>; failOn?: boolean } = {}) {
     listeners: (n: number | null) => { count = n; },
     enable: (on: boolean) => { enabled = on; },
     failOn: (fail: boolean) => { failOn = fail; },
+    failOff: (fail: boolean) => { failOff = fail; },
   };
 }
 
@@ -129,6 +136,75 @@ test('a startup release records nothing: the mixer may never have been paused', 
   const f = fixture({ status: new Promise<boolean>(() => {}) });
   await f.monitor.initialize(1);
   f.listeners(1);
+  await f.monitor.tick();
+  assert.equal(f.monitor.isIdle(), false);
+  assert.equal(f.monitor.idleWindow(), null);
+});
+
+test('new mounts mid-pause withdraw it until the new mixer is paused again', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  f.advance(600_000);
+  // A mixer restart (or the stream started): the mounts are younger than any
+  // buffer, and a restarted mixer boots live, so a burst now holds music.
+  f.monitor.mountsRestarted();
+  assert.equal(f.monitor.idleWindow(), null);
+  // Still empty: the re-assert that silences the new mixer starts the pause.
+  f.advance(4_000);
+  await f.monitor.tick();
+  assert.equal(f.monitor.isIdle(), true);
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+  f.advance(5_000);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 5_030, endedMsAgo: null });
+  f.advance(30_000);
+  f.listeners(1);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 35_060, endedMsAgo: 30 });
+});
+
+test('new mounts while live withdraw a recent pause too', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  f.advance(60_000);
+  f.listeners(1);
+  await f.monitor.tick();
+  f.advance(10_000);
+  f.monitor.mountsRestarted();
+  assert.equal(f.monitor.idleWindow(), null);
+  await f.monitor.tick();
+  assert.equal(f.monitor.idleWindow(), null);
+});
+
+test('a re-assert the mixer did not confirm withdraws the pause until one it does', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  f.advance(600_000);
+  // Telnet down mid-pause: the mixer may be restarting, and comes back live.
+  f.failOn(true);
+  await f.monitor.tick();
+  assert.equal(f.monitor.isIdle(), true);
+  assert.equal(f.monitor.idleWindow(), null);
+  f.failOn(false);
+  f.advance(5_000);
+  await f.monitor.tick();
+  assert.deepEqual(f.monitor.idleWindow(), { startedMsAgo: 0, endedMsAgo: null });
+});
+
+test('a resume the mixer did not confirm withdraws the pause: it may have landed', async () => {
+  const f = fixture();
+  await f.monitor.initialize();
+  await pauseNow(f);
+  f.advance(600_000);
+  f.failOff(true);
+  f.listeners(1);
+  await f.monitor.tick();
+  assert.equal(f.monitor.isIdle(), true);
+  assert.equal(f.monitor.idleWindow(), null);
+  f.failOff(false);
   await f.monitor.tick();
   assert.equal(f.monitor.isIdle(), false);
   assert.equal(f.monitor.idleWindow(), null);
