@@ -161,3 +161,20 @@ test('Keenable: a keen_ key is probed against the keyed endpoint', async (t) => 
   assert.equal(outbound[0].url, 'https://api.keenable.ai/v1/search');
   assert.equal(outbound[0].headers.get('x-api-key'), 'keen_good');
 });
+
+test('Firecrawl: a key is probed against /v2/search; a 401 reads as rejected', async (t) => {
+  const outbound = stubProvider(t, 200, { success: true, data: { web: [] } });
+  const r = await testKey({ key: 'SEARCH_API_KEY', value: 'fc-good', provider: 'firecrawl' });
+  assert.equal(r.ok, true);
+  assert.equal(r.message, '✓ Firecrawl key valid');
+  assert.equal(outbound.length, 1);
+  assert.equal(outbound[0].url, 'https://api.firecrawl.dev/v2/search');
+  assert.equal(outbound[0].method, 'POST');
+  assert.equal(outbound[0].headers.get('authorization'), 'Bearer fc-good');
+  t.mock.restoreAll();
+
+  stubProvider(t, 401, { success: false, error: 'Unauthorized' });
+  const rejected = await testKey({ key: 'SEARCH_API_KEY', value: 'fc-bad', provider: 'firecrawl' });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.message, 'Key rejected — check it\'s correct and active');
+});
