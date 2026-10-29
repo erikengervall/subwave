@@ -104,6 +104,18 @@ async function probeKey(
         return { ok: true, message: `✓ OpenRouter key valid · model responded` };
       } catch (err) { return { ok: false, message: briefLlmError(err) }; }
     }
+    case 'REQUESTY_API_KEY': {
+      // The model list needs a key, so a bad one is a 401; no model is called,
+      // as in the CLI's probeRequesty.
+      const r = await fetch(`${llmProvider.DEFAULT_REQUESTY_BASE_URL}/models`, {
+        headers: { Authorization: `Bearer ${value}` },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!r.ok) {
+        return { ok: false, message: r.status === 401 || r.status === 403 ? 'Key rejected — check it\'s correct and active' : `Request failed (${r.status})` };
+      }
+      return { ok: true, message: '✓ Requesty key valid' };
+    }
     case 'AI_GATEWAY_API_KEY': {
       return { ok: true, message: 'Key format looks valid — confirm via a live LLM call' };
     }
