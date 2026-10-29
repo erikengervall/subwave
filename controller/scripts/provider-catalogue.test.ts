@@ -19,6 +19,7 @@ process.env.STATE_DIR = stateRoot;
 const {
   LLM_PROVIDER_CATALOG, OPENAI_COMPATIBLE_GATEWAYS, PROVIDER_GROUPS,
 } = await import('../src/schemas/providers.js');
+const { SEARCH_PROVIDER_CATALOG, SETTINGS_SEARCH_PROVIDERS } = await import('../src/schemas/settings.js');
 const settings = await import('../src/settings.js');
 const { SECRET_ENV_KEYS } = await import('../src/setup/secrets.js');
 const { capabilitiesFor, reasoningFor, REASONING_RULES, embeddingSharesChatCredential } =
@@ -43,12 +44,15 @@ test('ids are unique and every entry is well formed', () => {
 test('the controller lists are the catalogue, in its order', () => {
   assert.deepEqual(settings.LLM_PROVIDERS, LLM_PROVIDER_CATALOG.map(p => p.id));
   assert.deepEqual(settings.EMBEDDING_PROVIDERS, LLM_PROVIDER_CATALOG.filter(p => p.embedding).map(p => p.id));
+  assert.deepEqual([...settings.SEARCH_PROVIDERS], SEARCH_PROVIDER_CATALOG.map(p => p.id));
+  assert.deepEqual([...SETTINGS_SEARCH_PROVIDERS], SEARCH_PROVIDER_CATALOG.map(p => p.id));
 });
 
 test('every provider key may be saved, and only through SECRET_ENV_KEYS', () => {
   for (const p of LLM_PROVIDER_CATALOG) {
     if (p.envVar) assert.ok(SECRET_ENV_KEYS.includes(p.envVar), `${p.id}: ${p.envVar} is not in SECRET_ENV_KEYS`);
   }
+  if (SEARCH_PROVIDER_CATALOG.some(p => p.key !== 'none')) assert.ok(SECRET_ENV_KEYS.includes('SEARCH_API_KEY'));
 });
 
 test('every provider has a capability descriptor, generated for a fixed-endpoint gateway', () => {
@@ -89,5 +93,12 @@ test('each gateway reasoning rule is pinned', () => {
         { forceNoThink: mode === 'forced' });
       assert.equal(got, want, `${id} ${key}`);
     }
+  }
+});
+
+test('every search provider says how it takes a key', () => {
+  for (const p of SEARCH_PROVIDER_CATALOG) {
+    assert.ok(p.label && p.hint, `${p.id}: label and hint are required`);
+    if (p.key !== 'none') assert.ok(p.keyName && p.keyPlaceholder && p.keyUrl, `${p.id}: a keyed provider names its key`);
   }
 });
