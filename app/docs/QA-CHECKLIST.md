@@ -57,6 +57,8 @@ Mark each box per platform. Note the device + OS version you tested on.
 Needs a station behind a reverse proxy with HTTP Basic Auth, and one with SUB/WAVE's stream password on and no proxy login.
 
 - [ ] **iOS** / [ ] **Android** — **Add a station with a login**: + Add a station → open Station login → the username/password fields look and behave as before → health check passes → tunes in and plays. _(the fields moved into `LoginFields`)_
+- [ ] **Android** — **A proxy that guards everything**: a station whose proxy asks for the login on `/api` and covers too → add it with its login → the health check passes, now-playing fills in, and the cover, its colours and the schedule's persona avatars load. _(Android's fetch and image loaders never sent the login from URL userinfo; it now goes as a header)_
+- [ ] **iOS** — **Lock-screen artwork behind that proxy**: tuned in to it → the lock screen and Control Center show the cover. _(RNTP fetches it with no headers, from the URL userinfo the cover keeps)_
 - [ ] **iOS** / [ ] **Android** — **Edit a saved login**: Stations → key button on the row → the saved username and password are filled in → change to a working login → Check and save → the screen closes and the station plays.
 - [ ] **iOS** / [ ] **Android** — **Single station, from the tuned-in card**: with only one station, Stations → **Station login** on the Tuned in card → edit → save. No need to switch station or remove it first.
 - [ ] **iOS** / [ ] **Android** — **Wrong login is not saved**: enter a wrong password → Check and save → "The station refused this login…" → close and reopen: the old login is still there.

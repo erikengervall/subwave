@@ -237,6 +237,7 @@ export default function PlayerScreen() {
   const djName = typeof dj?.name === 'string' ? dj.name : undefined;
 
   const coverSrc = api && nowPlaying?.subsonic_id ? api.cover(nowPlaying.subsonic_id) : null;
+  const coverHeaders = api && coverSrc ? api.imageHeaders(coverSrc) : undefined;
 
   const trackLike = useTrackLike(api, nowPlaying?.subsonic_id ?? null);
 
@@ -308,7 +309,7 @@ export default function PlayerScreen() {
   const listenerCount =
     listeners == null ? null : typeof listeners === 'number' ? listeners : listeners.current ?? null;
 
-  const coverColors = useCoverColors(coverSrc);
+  const coverColors = useCoverColors(coverSrc, coverHeaders);
 
   // Cast has no local RNTP media session; update OS metadata only for local playback.
   useNowPlayingInfo({
@@ -514,6 +515,7 @@ export default function PlayerScreen() {
                   <CenterStage
                     nowPlaying={nowPlaying}
                     coverSrc={coverSrc}
+                    coverHeaders={coverHeaders}
                     elapsed={elapsed}
                     llmTokens={llmTokens}
                     trackLike={trackLike}

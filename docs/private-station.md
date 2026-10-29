@@ -97,19 +97,23 @@ controller.
 > below is about plain basic auth.
 
 Plain basic auth works in both mobile apps. Enter the public station address,
-open **Station login**, then fill in the username and password. The app takes
-two different routes with those credentials, which is worth knowing when
-something half-works:
+open **Station login**, then fill in the username and password. The app sends
+the login as an explicit `Authorization: Basic` header on everything it asks
+the station for, which is worth knowing when something half-works:
 
-- **API polls and cover artwork** receive an in-memory credentialed request URL.
-  RN's `fetch` and `<Image>` sit on NSURLSession / OkHttp, which answer the
-  server's basic-auth challenge from that userinfo.
-- **The audio stream** gets a credential-free URL plus an explicit
-  `Authorization: Basic` header, because **iOS's AVPlayer silently drops
-  `user:pass@` userinfo from a media URL** (and Android's player is no more
-  reliable about it). That is why a basic-auth station could report *Stream
-  Unreachable* / HTTP 401 in the app while the exact same URL played fine in a
-  browser, in VLC and via `curl` (#764).
+- **The audio stream** gets a credential-free URL plus the header, because
+  **iOS's AVPlayer silently drops `user:pass@` userinfo from a media URL** (and
+  Android's player is no more reliable about it). That is why a basic-auth
+  station could report *Stream Unreachable* / HTTP 401 in the app while the
+  exact same URL played fine in a browser, in VLC and via `curl` (#764).
+- **API polls** go the same way: a credential-free URL plus the header.
+  Android's `fetch` (OkHttp) never sends a login from URL userinfo, so before
+  #1873 an Android app never showed its login to a proxy guarding `/api`.
+- **Cover art and persona avatars** get the header too, and also keep the login
+  as `user:pass@` userinfo in their URL, because iOS loads the lock-screen
+  artwork with a request that cannot carry a header but does answer the
+  proxy's challenge from userinfo. Both carry the same login. An avatar on
+  another host never gets the login.
 
 Things to know:
 
