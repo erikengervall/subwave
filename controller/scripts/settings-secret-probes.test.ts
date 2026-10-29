@@ -77,3 +77,25 @@ test('Requesty: a 401 reads as a rejected key, anything else as the status', asy
   assert.equal(failed.ok, false);
   assert.equal(failed.message, 'Request failed (502)');
 });
+
+// keenableSearch sends only a keen_ value, so a Tavily or Brave key left in the
+// shared SEARCH_API_KEY slot is unused, not wrong: it must never reach Keenable
+// or come back as "Key rejected".
+test('Keenable: a non-keen_ value is reported as unused, and never sent', async (t) => {
+  const outbound = stubProvider(t, 401);
+  const r = await testKey({ key: 'SEARCH_API_KEY', value: 'tvly-left-over', provider: 'keenable' });
+  assert.equal(r.ok, false);
+  assert.equal(r.message, 'Not a Keenable key (they start with keen_) — searches run keyless without one');
+  assert.doesNotMatch(r.message, /rejected/i);
+  assert.equal(outbound.length, 0);
+});
+
+test('Keenable: a keen_ key is probed against the keyed endpoint', async (t) => {
+  const outbound = stubProvider(t, 200, { results: [] });
+  const r = await testKey({ key: 'SEARCH_API_KEY', value: 'keen_good', provider: 'keenable' });
+  assert.equal(r.ok, true);
+  assert.equal(r.message, '✓ Keenable key valid');
+  assert.equal(outbound.length, 1);
+  assert.equal(outbound[0].url, 'https://api.keenable.ai/v1/search');
+  assert.equal(outbound[0].headers.get('x-api-key'), 'keen_good');
+});

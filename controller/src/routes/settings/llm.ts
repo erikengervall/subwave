@@ -161,6 +161,11 @@ async function probeKey(
         return { ok: true, message: '✓ Brave Search key valid' };
       }
       if (provider === 'keenable') {
+        // keenableSearch sends only a keen_ value and runs keyless otherwise,
+        // so any other key is not a rejected key, just one that goes unused.
+        if (!value.startsWith('keen_')) {
+          return { ok: false, message: 'Not a Keenable key (they start with keen_) — searches run keyless without one' };
+        }
         const r = await fetch('https://api.keenable.ai/v1/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-API-Key': value, 'X-Keenable-Title': 'subwave' },
