@@ -138,11 +138,16 @@ Things to know:
   proxy login but the stream password on, the login's password is checked as
   the stream password.
 - **A login the station stops accepting stops the player.** When the proxy
-  answers the saved login with 401 or 403, the player stops reconnecting and
-  says **Station login rejected**, with a button to the same screen. A network
-  drop or a timeout never does this. The app finds out by asking
-  `/api/health`, never the stream (that would count a listener), so a proxy
-  that guards only the audio stream and not `/api` goes unnoticed.
+  answers the saved login with a 401 that carries a `WWW-Authenticate`
+  challenge (what an HTTP Basic Auth proxy sends for a wrong login), the player
+  stops reconnecting and says **Station login rejected**, with a button to the
+  same screen. Nothing else does this: not a network drop or a timeout, and not
+  a 403, which an IP allowlist, a WAF or a Cloudflare challenge page sends
+  whatever the login is. The edit screen goes by the same rule: only a
+  challenged 401 refuses a login there, and anything else leaves it unchecked.
+  The app finds out by asking `/api/health`, never the stream (that would count
+  a listener), so a proxy that guards only the audio stream and not `/api`
+  goes unnoticed.
 
 Older app versions accepted `https://user:pass@host` addresses. On upgrade,
 the app removes that userinfo from the saved station URL and migrates the

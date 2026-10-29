@@ -106,6 +106,19 @@ test('a legacy userinfo address sends its login as the header, never in the URL'
   assert.equal(sent[0].headers.get('authorization'), authorizationFor({ username: 'dj', password: 'secret' }));
 });
 
+test("a health probe says whether a 401 carried a login challenge", async (t) => {
+  const replies = [
+    new Response('', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="radio"' } }),
+    new Response('', { status: 401 }),
+    new Response('', { status: 403 }),
+  ];
+  stubFetch(t, () => replies.shift()!);
+  const api = createApi('https://radio.example', LOGIN);
+  assert.deepEqual(await api.probeHealth(), { ok: false, kind: 'http', status: 401, challenged: true });
+  assert.deepEqual(await api.probeHealth(), { ok: false, kind: 'http', status: 401, challenged: false });
+  assert.deepEqual(await api.probeHealth(), { ok: false, kind: 'http', status: 403, challenged: false });
+});
+
 test('a failed read names the URL without the login in it', async (t) => {
   stubFetch(t, () => new Response('nope', { status: 500 }));
   const api = createApi('https://radio.example', LOGIN);

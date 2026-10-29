@@ -69,6 +69,7 @@ Needs a station behind a reverse proxy with HTTP Basic Auth, and one with SUB/WA
 - [ ] **iOS** / [ ] **Android** — **Remove login**: Remove login → confirm → fields clear, the station opens without a login, and the Cast button comes back.
 - [ ] **iOS** / [ ] **Android** — **Login rejected while listening**: change the proxy password on the server while tuned in → within about 10–40 s the audio stops and **Station login rejected** covers the player; it does not keep reconnecting (proxy log). **Edit station login** → new login → save → the overlay clears and Tune in plays. **Try again** clears it only once the station accepts.
 - [ ] **iOS** / [ ] **Android** — **No false alarm**: airplane mode while tuned in on a station with a login → the usual connection banner, never Station login rejected.
+- [ ] **iOS** / [ ] **Android** — **A 403 is not a rejected login**: make the proxy answer `/api` with 403 (an IP allowlist, or `respond 403`) while tuned in → never Station login rejected; on the edit screen, Check and save says it couldn't check the login and offers Save anyway.
 - [ ] **iOS** / [ ] **Android** — **Station password**: Station login screen → **Forget station password** → back on the player, the password prompt appears. Rotate the password in Admin and reopen the station → the prompt says "The saved password was not accepted."
 - [ ] **iOS** / [ ] **Android** — **Upgrade keeps saved logins**: on the previous build save a station with a login, install this build over it → the station still plays, and the edit screen shows the login filled in.
 

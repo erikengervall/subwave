@@ -9,15 +9,21 @@ import type { StationCredentials } from '../src/lib/station-credentials.ts';
 import { checkStationLogin, loginRefused } from '../src/lib/station-login.ts';
 import type { StationAuthResult } from '../src/lib/station-password.ts';
 
-test('only a 401 or 403 from the station is a refused login', () => {
-  assert.equal(loginRefused({ ok: false, kind: 'http', status: 401 }), true);
-  assert.equal(loginRefused({ ok: false, kind: 'http', status: 403 }), true);
+test('only a 401 with a login challenge is a refused login', () => {
+  assert.equal(loginRefused({ ok: false, kind: 'http', status: 401, challenged: true }), true);
   const silent: HealthResult[] = [
     { ok: true },
     { ok: false, kind: 'timeout' },
     { ok: false, kind: 'network', message: 'Network request failed' },
+    // No challenge: not a proxy asking for a login.
+    { ok: false, kind: 'http', status: 401 },
+    { ok: false, kind: 'http', status: 401, challenged: false },
+    // An IP allowlist, a WAF or a Cloudflare challenge page: no login fixes it.
+    { ok: false, kind: 'http', status: 403 },
+    { ok: false, kind: 'http', status: 403, challenged: true },
     // A proxy on the listener's own network, not the station.
     { ok: false, kind: 'http', status: 407 },
+    { ok: false, kind: 'http', status: 407, challenged: true },
     { ok: false, kind: 'http', status: 404 },
     { ok: false, kind: 'http', status: 500 },
     { ok: false, kind: 'http', status: 502 },
@@ -43,7 +49,9 @@ function station(opts: {
     health: async (login: StationCredentials | null): Promise<HealthResult> => {
       asked.push(login ? `health ${login.username}` : 'health anonymous');
       if (opts.health) return opts.health;
-      if (opts.proxy && !sameLogin(login, opts.proxy)) return { ok: false, kind: 'http', status: 401 };
+      if (opts.proxy && !sameLogin(login, opts.proxy)) {
+        return { ok: false, kind: 'http', status: 401, challenged: true };
+      }
       return { ok: true };
     },
     streamPassword: async () => {
@@ -69,12 +77,20 @@ test('a login the proxy refuses is rejected, and nothing else is asked', async (
   assert.deepEqual(s.asked, ['health dj'], 'a refused login never reaches /station-auth');
 });
 
-test('a 403 from the proxy is a rejection too', async () => {
-  const s = station({ health: { ok: false, kind: 'http', status: 403 } });
-  assert.deepEqual(await checkStationLogin({ login: login('dj', 'pw'), ...s }), {
-    verdict: 'rejected',
-    by: 'proxy',
-  });
+test('a 403 or an unchallenged 401 leaves the login unchecked, never refused', async () => {
+  const answers: HealthResult[] = [
+    { ok: false, kind: 'http', status: 403 },
+    { ok: false, kind: 'http', status: 401 },
+  ];
+  for (const health of answers) {
+    const s = station({ health, streamPassword: 'pw' });
+    assert.deepEqual(
+      await checkStationLogin({ login: login('dj', 'pw'), ...s }),
+      { verdict: 'unreachable', rateLimited: false },
+      JSON.stringify(health),
+    );
+    assert.deepEqual(s.asked, ['health dj']);
+  }
 });
 
 test('a login the proxy takes is accepted when the stream password is off', async () => {
@@ -158,14 +174,20 @@ test('a rate-limited or unavailable /station-auth leaves the login unchecked', a
 });
 
 test('a denied password with no anonymous answer cannot tell a proxy from none', async () => {
-  let call = 0;
-  const s = station({ streamPassword: 'station-pw' });
-  const health = async (l: StationCredentials | null): Promise<HealthResult> => {
-    call += 1;
-    return call === 1 ? s.health(l) : { ok: false, kind: 'timeout' };
-  };
-  assert.deepEqual(await checkStationLogin({ login: login('dj', 'other'), ...s, health }), {
-    verdict: 'unreachable',
-    rateLimited: false,
-  });
+  const anonymous: HealthResult[] = [
+    { ok: false, kind: 'timeout' },
+    // Not a login challenge, so not a proxy that took the login.
+    { ok: false, kind: 'http', status: 403 },
+    { ok: false, kind: 'http', status: 401 },
+  ];
+  for (const answer of anonymous) {
+    const s = station({ streamPassword: 'station-pw' });
+    const health = async (l: StationCredentials | null): Promise<HealthResult> =>
+      l ? s.health(l) : answer;
+    assert.deepEqual(
+      await checkStationLogin({ login: login('dj', 'other'), ...s, health }),
+      { verdict: 'unreachable', rateLimited: false },
+      JSON.stringify(answer),
+    );
+  }
 });
