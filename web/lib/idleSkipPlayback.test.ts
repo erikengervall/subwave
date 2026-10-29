@@ -2,9 +2,10 @@
 // silence (#2072): it reads /state only after the first audio, leaves a live
 // station's playback untouched, sheds lag by playbackRate and reports what it
 // measured, and an engine that ignores the rate (WebKit's GStreamer build) gets
-// today's behaviour. A late check overshoots by at most twice its lateness, and
-// a hidden tab ends the skip. A fake element runs on the real clock, so each
-// test takes a second or two at a small buffer.
+// today's behaviour. A late check overshoots by at most twice its lateness, a
+// hidden tab ends the skip, and no run, however it ends, leaves its
+// visibilitychange listener on the page. A fake element runs on the real
+// clock, so each test takes a second or two at a small buffer.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -55,11 +56,23 @@ class FakeAudio extends EventTarget {
   }
 }
 
+// `listening` counts its visibilitychange listeners: `document` outlives every
+// connection, so a run that leaves one behind leaks it and its element.
 class FakePage extends EventTarget {
   hidden = false;
+  private listeners = new Set<unknown>();
+  get listening() { return this.listeners.size; }
   setHidden(hidden: boolean) {
     this.hidden = hidden;
     this.dispatchEvent(new Event('visibilitychange'));
+  }
+  override addEventListener(type: string, cb: EventListenerOrEventListenerObject | null, opts?: AddEventListenerOptions | boolean) {
+    this.listeners.add(cb);
+    super.addEventListener(type, cb, opts);
+  }
+  override removeEventListener(type: string, cb: EventListenerOrEventListenerObject | null, opts?: EventListenerOptions | boolean) {
+    this.listeners.delete(cb);
+    super.removeEventListener(type, cb, opts);
   }
 }
 
@@ -171,6 +184,55 @@ test('a tab hidden before the fast-forward never starts it', async () => {
   await sleep(200);
   assert.deepEqual(h.el.rates, []);
   assert.deepEqual(h.trims, []);
+});
+
+test('the visibility listener goes with the run, however it ends', async () => {
+  const ended = async (name: string, page: FakePage, settle: () => Promise<unknown>) => {
+    await settle();
+    assert.equal(page.listening, 0, `${name}: listener left on the page`);
+  };
+
+  let page = new FakePage();
+  const live = run({ window: null, page });
+  assert.equal(page.listening, 1);
+  live.el.start();
+  await ended('a live station', page, () => sleep(100));
+
+  page = new FakePage();
+  const failed = run({ read: () => Promise.reject(new Error('offline')), page });
+  failed.el.start();
+  await ended('a failed read', page, () => sleep(100));
+
+  page = new FakePage();
+  const early = run({ page });
+  early.cancel();
+  await ended('cancelled before the first audio', page, async () => {});
+
+  page = new FakePage();
+  const done = run({ page });
+  done.el.start();
+  await ended('a finished skip', page, async () => { while (!done.trims.length) await sleep(50); });
+
+  page = new FakePage();
+  const dry = run({ buffer: 30, page });
+  dry.el.start();
+  await sleep(150);
+  assert.equal(page.listening, 1);
+  dry.el.dispatchEvent(new Event('waiting'));
+  await ended('`waiting`', page, async () => {});
+
+  page = new FakePage();
+  const cancelled = run({ buffer: 30, page });
+  cancelled.el.start();
+  await sleep(150);
+  cancelled.cancel();
+  await ended('cancelled mid-skip', page, async () => {});
+
+  page = new FakePage();
+  const ignored = run({ page });
+  ignored.el.honoursRate = false;
+  ignored.el.start();
+  await ended('an engine that ignores the rate', page, () => sleep(1_800));
 });
 
 test('an engine that ignores the rate is put back to 1x and reports nothing', async () => {
