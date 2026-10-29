@@ -6,8 +6,8 @@
 // backoff and a regained link each read the native media clock first
 // (TrackPlayer.getProgress), as the web player's advancingSince() does (#1232).
 // A native state event cannot decide it alone: Buffering is an instant, not a
-// verdict, and a player can resume without a Playing event reaching JS
-// (SwiftAudioEx emits `.ready` between Buffering and Playing).
+// verdict, and the last state JS hears can be stale (SwiftAudioEx's `.ready` is
+// a check-then-set that can land after `.playing`).
 //
 // One reload runs at a time. Every timer and async continuation carries the
 // listening session and reload attempt it was armed in, and does nothing once
@@ -297,8 +297,11 @@ export class StreamRecovery {
       this.deps.log(`hold [${check.reason}] state=${state}: ${describe(from, to)} — playing, not reloading`);
       this.retries = 0;
       this.deps.onAdvancing();
-      // The native state still hasn't said Playing, so keep watching the clock.
-      this.arm('watchdog', WATCHDOG_MS, to);
+      // Keep watching only while the native state still says stalled. From any
+      // other state (a stale Ready or Error) a later stall emits Buffering and
+      // arms a check of its own, and a check left pending would read a clock
+      // that an iOS interruption froze without an event.
+      if (state === 'buffering' || state === 'loading') this.arm('watchdog', WATCHDOG_MS, to);
       return;
     }
     void this.reload(check.reason, describe(from, to));

@@ -126,6 +126,38 @@ test('a stall the media clock plays through is not reloaded; the UI is reconcile
   assert.match(line ?? '', /state=buffering: pos .* pace 0\.00/);
 });
 
+test('a hold on a stale Ready stops watching: a clock frozen with no event is not reloaded', async (t) => {
+  const h = setup(t);
+  h.recovery.tuneIn();
+  await settle();
+  // The audio plays, but the last state JS heard is Ready.
+  h.recovery.onState('loading');
+  h.recovery.onState('ready');
+  h.clock.run();
+  await h.tick(WATCHDOG_MS + 500);
+  assert.ok(h.logs.some((l) => l.startsWith('hold [watchdog] state=ready')));
+  // An iOS interruption stops AVPlayer without a state event.
+  h.clock.freeze();
+  await h.tick(60_000);
+  assert.deepEqual(h.reloads, ['tune']);
+});
+
+test('a stall after a hold on a stale Ready reloads WATCHDOG_MS after it began', async (t) => {
+  const h = setup(t);
+  h.recovery.tuneIn();
+  await settle();
+  h.recovery.onState('loading');
+  h.recovery.onState('ready');
+  h.clock.run();
+  await h.tick(WATCHDOG_MS + 3000); // held at 6s, still playing at 9s
+  h.recovery.onState('buffering');
+  h.clock.freeze();
+  await h.tick(WATCHDOG_MS - 250);
+  assert.deepEqual(h.reloads, ['tune']);
+  await h.tick(500);
+  assert.deepEqual(h.reloads, ['tune', 'watchdog']);
+});
+
 test('a stall with a stopped clock reloads once, WATCHDOG_MS after it began', async (t) => {
   const h = setup(t);
   await onAir(h);
@@ -242,6 +274,10 @@ test('a stale Error while the stream plays is held, not reloaded', async (t) => 
   await h.tick(2000);
   assert.deepEqual(h.reloads, ['tune']);
   assert.ok(h.logs.some((l) => l.startsWith('hold [error] state=error')));
+  // And stops watching: a later stall would emit Buffering.
+  h.clock.freeze();
+  await h.tick(60_000);
+  assert.deepEqual(h.reloads, ['tune']);
 });
 
 test('a failing reload backs off while nothing plays', async (t) => {
