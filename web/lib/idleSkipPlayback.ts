@@ -24,7 +24,8 @@
 // target. At 8x that is ~8x the lateness, and a woken-moments-ago listener has
 // only the 1s music margin. So the last SLOW_SHED_SECONDS go at SLOW_RATE: a
 // fast-phase check up to ~185ms late still lands inside it, and a late
-// slow-phase check overshoots by at most 2x its lateness (0.3s at 150ms).
+// slow-phase check overshoots by at most 2x its lateness (0.3s at 150ms). A
+// hidden tab ends the skip outright, since browsers may clamp its timers to 1s.
 
 import { idleSkipSeconds, type IdleSkipInput } from './idleSkip';
 import type { IdleWindow } from './types';
@@ -54,6 +55,14 @@ export interface IdleSkipOptions {
   /** Called once, if any lag was shed, with how much in ms. */
   onTrim: (ms: number) => void;
   now?: () => number;
+  /** Whether the page is hidden, and when that changes; `document` by default. */
+  page?: PageVisibility | null;
+}
+
+export interface PageVisibility {
+  readonly hidden: boolean;
+  addEventListener(type: 'visibilitychange', listener: () => void): void;
+  removeEventListener(type: 'visibilitychange', listener: () => void): void;
 }
 
 /** Start sizing and running the skip for the connection `el` has just opened.
@@ -61,11 +70,14 @@ export interface IdleSkipOptions {
  *  reports nothing; the caller cancels on any new connection, pause or stop. */
 export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): () => void {
   const now = opts.now ?? (() => performance.now());
+  const page = opts.page !== undefined ? opts.page : typeof document === 'undefined' ? null : document;
   const requestedAt = now();
   const abort = new AbortController();
   const cleanups: (() => void)[] = [];
   let cancelled = false;
   let fast = false;
+  // Ends a fast-forward in progress the way `waiting` does.
+  let stopFastForward: (() => void) | null = null;
 
   const once = (event: string, ready: () => boolean) => new Promise<void>(resolve => {
     if (ready()) return resolve();
@@ -81,6 +93,15 @@ export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): ()
     if (fast) el.playbackRate = 1;
     fast = false;
   };
+  // Hiding the tab ends the run for good: a fast-forward stops with what it has
+  // shed, and one not yet started never starts.
+  const onVisibility = () => {
+    if (page?.hidden) (stopFastForward ?? cancel)();
+  };
+  if (page) {
+    page.addEventListener('visibilitychange', onVisibility);
+    cleanups.push(() => page.removeEventListener('visibilitychange', onVisibility));
+  }
 
   (async () => {
     await once('loadedmetadata', () => el.readyState >= HAVE_METADATA);
@@ -104,13 +125,13 @@ export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): ()
     if (target() <= 0) return;
 
     await once('playing', () => !el.paused && el.readyState >= HAVE_FUTURE_DATA);
-    if (cancelled || target() <= 0) return;
+    if (cancelled || target() <= 0 || page?.hidden) return;
     await fastForward(target);
-  })().catch(() => cancel());
+  })().catch(() => {}).finally(cancel);
 
   // Shed lag at SKIP_RATE, then SLOW_RATE for the last SLOW_SHED_SECONDS, until
-  // the (shrinking) target is met, the buffer runs dry (`waiting`), or the
-  // engine stops making progress.
+  // the (shrinking) target is met, the buffer runs dry (`waiting`), the tab is
+  // hidden, or the engine stops making progress.
   function fastForward(target: () => number) {
     return new Promise<void>(resolve => {
       const t0 = now();
@@ -151,6 +172,7 @@ export function skipIdleSilence(el: HTMLAudioElement, opts: IdleSkipOptions): ()
         timer = setTimeout(check, Math.min(CHECK_MS, due * 1000));
       };
       el.addEventListener('waiting', finish);
+      stopFastForward = finish;
       cleanups.push(() => {
         if (timer !== null) clearTimeout(timer);
         el.removeEventListener('waiting', finish);

@@ -2,8 +2,8 @@
 // silence (#2072): it reads /state only after the first audio, leaves a live
 // station's playback untouched, sheds lag by playbackRate and reports what it
 // measured, and an engine that ignores the rate (WebKit's GStreamer build) gets
-// today's behaviour. A late check overshoots by at most twice its lateness. A
-// fake element runs on the real clock, so each
+// today's behaviour. A late check overshoots by at most twice its lateness, and
+// a hidden tab ends the skip. A fake element runs on the real clock, so each
 // test takes a second or two at a small buffer.
 
 import assert from 'node:assert/strict';
@@ -55,7 +55,15 @@ class FakeAudio extends EventTarget {
   }
 }
 
-function run(opts: { buffer?: number; window?: IdleWindow | null; read?: () => Promise<unknown> } = {}) {
+class FakePage extends EventTarget {
+  hidden = false;
+  setHidden(hidden: boolean) {
+    this.hidden = hidden;
+    this.dispatchEvent(new Event('visibilitychange'));
+  }
+}
+
+function run(opts: { buffer?: number; window?: IdleWindow | null; read?: () => Promise<unknown>; page?: FakePage } = {}) {
   const el = new FakeAudio();
   const log: string[] = [];
   const trims: number[] = [];
@@ -73,6 +81,7 @@ function run(opts: { buffer?: number; window?: IdleWindow | null; read?: () => P
       trims.push(ms);
       trimAt = performance.now();
     },
+    page: opts.page ?? null,
   });
   return { el, log, trims, cancel, readAt: () => readAt, trimAt: () => trimAt };
 }
@@ -123,6 +132,45 @@ test('a check that runs 150ms late overshoots by at most twice that, well inside
     assert.ok(over < 0.45, `${buffer}s/${endedMsAgo}: overshoot ${over.toFixed(3)}s`);
     assert.deepEqual(r.el.rates, [SKIP_RATE, SLOW_RATE, 1]);
   }
+});
+
+test('hiding the tab ends the skip with what was shed, and showing it does not resume it', async () => {
+  const page = new FakePage();
+  const r = run({ buffer: 30, page });
+  r.el.start();
+  await sleep(150);
+  page.setHidden(true);
+  assert.deepEqual(r.el.rates, [SKIP_RATE, 1]);
+  assert.equal(r.trims.length, 1);
+  const trim = r.trims[0] ?? 0;
+  assert.ok(trim > 300 && trim < 2_000, String(trim));
+  page.setHidden(false);
+  await sleep(300);
+  assert.deepEqual(r.el.rates, [SKIP_RATE, 1]);
+  assert.equal(r.trims.length, 1);
+});
+
+test('a tab hidden before the fast-forward never starts it', async () => {
+  const page = new FakePage();
+  let answer!: (v: unknown) => void;
+  const r = run({ page, read: () => new Promise(res => { answer = res; }) });
+  r.el.start();
+  await sleep(20);
+  page.setHidden(true);
+  answer({ streamIdleWindow: IDLE });
+  page.setHidden(false);
+  await sleep(200);
+  assert.deepEqual(r.el.rates, []);
+  assert.deepEqual(r.trims, []);
+
+  // Already hidden at tune-in (a lock-screen or media-key play).
+  const hiddenPage = new FakePage();
+  hiddenPage.hidden = true;
+  const h = run({ page: hiddenPage });
+  h.el.start();
+  await sleep(200);
+  assert.deepEqual(h.el.rates, []);
+  assert.deepEqual(h.trims, []);
 });
 
 test('an engine that ignores the rate is put back to 1x and reports nothing', async () => {
