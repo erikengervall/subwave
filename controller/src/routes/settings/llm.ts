@@ -214,8 +214,10 @@ async function probeKey(
       return { ok: true, message: `✓ ListenBrainz token valid${j.user_name ? ` · user: ${j.user_name}` : ''}` };
     }
     default: {
-      // A fixed-endpoint gateway's model list needs its key, so a bad one is a
-      // 401; no model is called, as in the CLI's probeGatewayModels.
+      // A fixed-endpoint gateway's model list, with the key as a Bearer; no
+      // model is called, as in the CLI's probeGatewayModels. Requesty's list is
+      // public, but a bearer it can't verify is a 403 ("Invalid authorization
+      // token"), so 401 and 403 both read as a rejected key.
       const gw = OPENAI_COMPATIBLE_GATEWAYS.find(g => g.envVar === key);
       if (!gw) return { ok: false, message: `No probe defined for ${key}` };
       const r = await fetch(`${gw.openaiCompatible.baseUrl}/models`, {

@@ -2033,10 +2033,10 @@ export function normalizeRecipeRow(raw: unknown): {
 // The LLM provider catalogue: one record per provider, data only. Everything
 // that lists providers derives from it: the controller's LLM_PROVIDERS and
 // EMBEDDING_PROVIDERS (so GET /settings, the pickers and every "must be one of"
-// error keep this order), the secrets allowlist and its env flags, each
-// builder's apiKeyEnv, the web's labels, key hints and embedding suggestions,
-// and the CLI wizard's options (embedded at build time by
-// cli/scripts/embed-assets.ts, because the wizard runs before any controller
+// error keep this order), the secrets allowlist and its env flags, a
+// fixed-endpoint gateway's apiKeyEnv, the web's labels, key hints and
+// embedding suggestions, and the CLI wizard's options (embedded at build time
+// by cli/scripts/embed-assets.ts, because the wizard runs before any controller
 // exists). Behaviour does NOT live here: a provider's quirks are a capability
 // descriptor in llm/internal/provider/capabilities.ts, and a fixed-endpoint
 // gateway names one of its shared reasoning rules rather than carrying code.

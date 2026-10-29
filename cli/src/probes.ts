@@ -160,9 +160,9 @@ export async function probeOpenRouter(args: {
 }
 
 // A fixed-endpoint OpenAI-compatible gateway (the catalogue's openaiCompatible,
-// e.g. Requesty). Unlike OpenRouter, a bad key fails here: Requesty answers a
-// bearer it can't verify with 403 ("Invalid authorization token"), so a 401 or
-// a 403 is a rejected key, as in the admin Test key.
+// e.g. Requesty). Requesty's model list is public but, unlike OpenRouter's,
+// answers a bearer it can't verify with 403 ("Invalid authorization token"), so
+// a 401 or a 403 is a rejected key, as in the admin Test key.
 export async function probeGatewayModels(args: {
   apiKey: string;
   baseUrl: string;         // the gateway's base URL, /v1 suffix included
