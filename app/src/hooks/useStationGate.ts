@@ -136,7 +136,12 @@ export function useStationGate({
       void api.checkStationAuth(password).then(async (result) => {
         if (result !== 'denied' || apiRef.current !== api) return;
         // Before forgetting it, which already brings the prompt up (above).
-        if (alive) setSavedRejected(true);
+        // Not held back by `alive`: a stop while the check was out re-runs
+        // this effect, and the prompt it leads to must still say why. The
+        // apiRef check keeps it to the station that was asked; after a
+        // switch, the next station's visit check clears it, and a station
+        // with no lock never shows the prompt that carries it.
+        setSavedRejected(true);
         await storeRef.current.forgetStationPassword();
         if (alive) setPhase('prompt');
       });
