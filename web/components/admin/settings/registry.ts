@@ -290,7 +290,7 @@ export const SETTINGS_INDEX: readonly IndexEntry[] = [
   // ── library tagger ─────────────────────────────────────────────────────────
   { label: 'Tagger', section: 'library', card: 'Tagger', keywords: 'enabled tagging runs moods genres' },
   { label: 'LLM batch size', section: 'library', card: 'Tagger', keywords: 'batch tracks per call seed' },
-  { label: 'Provider', section: 'library', card: 'Embedding server', keywords: 'embedding ollama openai-compatible locca openrouter openai google requesty inherit' },
+  { label: 'Provider', section: 'library', card: 'Embedding server', keywords: 'embedding ollama openai-compatible locca openrouter requesty openai google inherit' },
   { label: 'Model', section: 'library', card: 'Embedding server', keywords: 'nomic-embed-text embedding model reindex' },
   { label: 'Embedding server URL', section: 'library', card: 'Embedding server', keywords: 'base url host' },
   { label: 'Bearer token', section: 'library', card: 'Embedding server', keywords: 'embedding api key auth' },
