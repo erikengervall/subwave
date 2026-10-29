@@ -145,8 +145,9 @@ Things to know:
   stops reconnecting and says **Station login rejected**, with a button to the
   same screen. Nothing else does this: not a network drop or a timeout, and not
   a 403, which an IP allowlist, a WAF or a Cloudflare challenge page sends
-  whatever the login is. The edit screen goes by the same rule: only a
-  challenged 401 refuses a login there, and anything else leaves it unchecked.
+  whatever the login is. The edit screen reads `/api/health` by the same rule:
+  only a challenged 401 there is the proxy refusing a login, and any other
+  failure leaves it unchecked.
   The app finds out by asking `/api/health`, never the stream (that would count
   a listener), so a proxy that guards only the audio stream and not `/api`
   goes unnoticed.
