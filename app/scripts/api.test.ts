@@ -119,6 +119,47 @@ test("a health probe says whether a 401 carried a login challenge", async (t) =>
   assert.deepEqual(await api.probeHealth(), { ok: false, kind: 'http', status: 403, challenged: false });
 });
 
+test("/station-auth reads a proxy's login challenge as unverified, never a wrong password", async (t) => {
+  const replies = [
+    new Response('', { status: 401, headers: { 'WWW-Authenticate': 'Basic realm="radio"' } }),
+    new Response('', { status: 401 }),
+    new Response('', { status: 200 }),
+    new Response('', { status: 429 }),
+  ];
+  stubFetch(t, () => replies.shift()!);
+  const api = createApi('https://radio.example', LOGIN);
+  assert.equal(await api.checkStationAuth('station-pw'), 'unavailable');
+  assert.equal(await api.checkStationAuth('station-pw'), 'denied');
+  assert.equal(await api.checkStationAuth('station-pw'), 'ok');
+  assert.equal(await api.checkStationAuth('station-pw'), 'rate-limited');
+});
+
+test('the stream URL never carries the login; the station password rides as ?auth=', () => {
+  assert.equal(createApi('https://radio.example', LOGIN).streamUrl(), 'https://radio.example/stream.mp3');
+  assert.equal(createApi('https://dj:secret@radio.example').streamUrl('ogg'), 'https://radio.example/stream.ogg');
+  assert.equal(
+    createApi('https://radio.example', LOGIN, () => 'station-pw').streamUrl(),
+    'https://radio.example/stream.mp3?auth=station-pw',
+  );
+});
+
+test('a station on a port, under a path, over http or on IPv6 keeps its address', async (t) => {
+  const sent = stubFetch(t);
+  for (const base of ['https://radio.example:8443', 'https://radio.example/radio', 'http://[fd00::1]:8000/radio/']) {
+    const clean = base.replace(/\/$/, '');
+    const api = createApi(base, LOGIN);
+    await api.state();
+    assert.equal(sent.at(-1)?.url, `${clean}/api/state`);
+    assert.equal(sent.at(-1)?.headers.get('authorization'), BASIC);
+    assert.equal(api.streamUrl(), `${clean}/stream.mp3`);
+    assert.deepEqual(api.imageHeaders(api.cover('x')), { Authorization: BASIC }, base);
+    assert.deepEqual(api.imageHeaders(`${clean}/api/persona-avatar/nova`), { Authorization: BASIC }, base);
+  }
+  assert.equal(sent.length, 3);
+  // Another port is another origin.
+  assert.equal(createApi('https://radio.example:8443', LOGIN).imageHeaders('https://radio.example:8444/x'), undefined);
+});
+
 test('a failed read names the URL without the login in it', async (t) => {
   stubFetch(t, () => new Response('nope', { status: 500 }));
   const api = createApi('https://radio.example', LOGIN);
