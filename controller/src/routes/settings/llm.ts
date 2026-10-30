@@ -168,10 +168,8 @@ async function probeKey(
         return { ok: true, message: '✓ Keenable key valid' };
       }
       if (provider === 'firecrawl') {
-        const r = await fetch('https://api.firecrawl.dev/v2/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${value}` },
-          body: JSON.stringify({ query: 'test', limit: 1 }),
+        const r = await fetch('https://api.firecrawl.dev/v2/team/credit-usage', {
+          headers: { Authorization: `Bearer ${value}` },
           signal: AbortSignal.timeout(10000),
         });
         if (!r.ok) {
