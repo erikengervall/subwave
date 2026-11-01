@@ -258,10 +258,11 @@ export async function braveSearch(
   return parseBraveResponse(data);
 }
 
-// Strips residual markup from Brave snippets. text_decorations=0 removes the
-// highlighting, but descriptions can still carry entities (&#x27; etc.) and
-// the occasional stray tag depending on the source page.
-function braveText(raw: unknown): string {
+// Strips residual markup from a search snippet. Brave and Firecrawl both pass
+// through page descriptions, which can carry entities (&#x27; etc.) and the
+// occasional stray tag depending on the source page, even with Brave's
+// text_decorations=0 removing the highlighting.
+function cleanSnippet(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   return raw
     .replace(/<[^>]+>/g, '')
@@ -296,14 +297,14 @@ export function parseBraveResponse(data: unknown): SearchResponse {
   // one-element array — accept either.
   const ibRaw = sub(d.infobox, 'results');
   const ib = Array.isArray(ibRaw) ? ibRaw[0] : ibRaw;
-  const answer = braveText(sub(ib, 'long_desc') || sub(ib, 'description'));
+  const answer = cleanSnippet(sub(ib, 'long_desc') || sub(ib, 'description'));
 
   const results: SearchResult[] = [];
   const push = (r: unknown) => {
     if (!r || typeof r !== 'object' || results.length >= 10) return;
     const rec = r as Record<string, unknown>;
-    const title = braveText(rec.title);
-    const content = braveText(rec.description).slice(0, 300);
+    const title = cleanSnippet(rec.title);
+    const content = cleanSnippet(rec.description).slice(0, 300);
     if (!title || !content) return;
     results.push({ title, content });
   };
@@ -473,7 +474,7 @@ export function parseFirecrawlResponse(data: unknown): SearchResponse {
   const inner = (data as Record<string, unknown>).data;
   const raw = inner && typeof inner === 'object' ? (inner as Record<string, unknown>).web : undefined;
 
-  const text = (v: unknown): string => braveText(v).replace(/\s+/g, ' ').trim();
+  const text = (v: unknown): string => cleanSnippet(v).replace(/\s+/g, ' ').trim();
   const results: SearchResult[] = [];
   for (const r of Array.isArray(raw) ? raw : []) {
     if (!r || typeof r !== 'object') continue;

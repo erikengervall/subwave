@@ -131,7 +131,7 @@ export function SearchSection({ data, form, setForm, busy, saveSettings, adminFe
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // `provider` tells the controller which endpoint to probe — the same
-        // SEARCH_API_KEY slot holds a Tavily, Brave or Keenable key.
+        // SEARCH_API_KEY slot holds a Tavily, Brave, Keenable or Firecrawl key.
         body: JSON.stringify({ key: 'SEARCH_API_KEY', value: value.trim(), provider }),
       });
       const j = await r.json() as { ok: boolean; message: string; latencyMs: number };

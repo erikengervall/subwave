@@ -173,6 +173,8 @@ async function probeKey(
         if (!isFirecrawlKey(value)) {
           return { ok: false, message: 'Not a Firecrawl key (they start with fc-)' };
         }
+        // credit-usage rather than a search, which would spend credits on every
+        // click. It answers a bad key with a 401 all the same.
         const r = await fetch('https://api.firecrawl.dev/v2/team/credit-usage', {
           headers: { Authorization: `Bearer ${value}` },
           signal: AbortSignal.timeout(10000),

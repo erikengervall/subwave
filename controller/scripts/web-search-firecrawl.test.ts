@@ -1,7 +1,8 @@
 // Tests for the Firecrawl web-search backend. The parser and request builder
-// are pure and pinned directly; firecrawlSearch() runs once against a stubbed
-// fetch so the key is checked through the real settings + SEARCH_API_KEY
-// resolution. The fixture is a recorded /v2/search response.
+// are pure and pinned directly; firecrawlSearch() and searchWeb() run against a
+// stubbed fetch, so nothing reaches Firecrawl and the key is checked through the
+// real settings + SEARCH_API_KEY resolution, including the refusal of a key that
+// isn't an fc- one. The fixture is a recorded /v2/search response.
 // Run: `npm test -- web-search-firecrawl`.
 
 import assert from 'node:assert/strict';

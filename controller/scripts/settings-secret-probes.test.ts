@@ -107,6 +107,7 @@ test('a key with a control character is refused before any probe, without echoin
     { key: 'SEARCH_API_KEY', provider: 'tavily' },
     { key: 'SEARCH_API_KEY', provider: 'brave' },
     { key: 'SEARCH_API_KEY', provider: 'keenable' },
+    { key: 'SEARCH_API_KEY', provider: 'firecrawl' },
     { key: 'ELEVENLABS_API_KEY' },
     { key: 'LISTENBRAINZ_USER_TOKEN' },
     { key: 'EMBEDDING_API_KEY' },
