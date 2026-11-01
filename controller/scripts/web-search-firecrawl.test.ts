@@ -127,6 +127,18 @@ test('firecrawlSearch: sends the settings key; no key or HTTP errors throw', asy
   }
 });
 
+test('searchWeb: dispatches to Firecrawl and carries the recency through as tbs', async (t) => {
+  const calls = stubSearch(t);
+  await settings.update({ search: { provider: 'firecrawl', apiKey: 'fc-test' } });
+
+  const out = await searchWeb('firecrawl dispatch regression', { recency: 'week' });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.firecrawl.dev/v2/search');
+  assert.equal(JSON.parse(calls[0].body).tbs, 'qdr:w');
+  assert.equal(out.results.length, 5);
+});
+
 test('isFirecrawlKey: only an fc- value counts', () => {
   assert.equal(isFirecrawlKey('fc-abc'), true);
   assert.equal(isFirecrawlKey(' fc-abc '), true);
