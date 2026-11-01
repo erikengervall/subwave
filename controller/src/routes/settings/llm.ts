@@ -12,7 +12,7 @@ import { OPENAI_COMPATIBLE_GATEWAYS, openaiCompatibleGateway } from '../../schem
 import { applyCustomHeadersPatch } from '../../settings/vocab.js';
 import type { EmbeddingCfg } from '../../llm/provider.js';
 import { listenbrainzApiBase } from '../../broadcast/scrobble.js';
-import { isKeenableKey } from '../../skills/web-search.js';
+import { isFirecrawlKey, isKeenableKey } from '../../skills/web-search.js';
 import { generateText, createGateway } from 'ai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -168,6 +168,11 @@ async function probeKey(
         return { ok: true, message: '✓ Keenable key valid' };
       }
       if (provider === 'firecrawl') {
+        // firecrawlSearch refuses anything but an fc- key, so another provider's
+        // key is not sent here either.
+        if (!isFirecrawlKey(value)) {
+          return { ok: false, message: 'Not a Firecrawl key (they start with fc-)' };
+        }
         const r = await fetch('https://api.firecrawl.dev/v2/team/credit-usage', {
           headers: { Authorization: `Bearer ${value}` },
           signal: AbortSignal.timeout(10000),

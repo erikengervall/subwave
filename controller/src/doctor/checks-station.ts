@@ -4,7 +4,7 @@
 // Part of the doctor/ split - see ../doctor.ts for the section runner.
 
 import { recentCalls } from '../llm/log.js';
-import { searchReady, searchWeb } from '../skills/web-search.js';
+import { searchKeySlot, searchReady, searchWeb } from '../skills/web-search.js';
 import * as system from '../system.js';
 import { budgetStatus } from '../broadcast/dj-budget.js';
 import * as analyzer from '../music/analyzer.js';
@@ -29,10 +29,14 @@ export async function checkCapabilities(s: StationSettings | null): Promise<Find
   try { ready = searchReady(); } catch { ready = true; }
 
   if (!ready) {
+    // Firecrawl with a key on file is only unready when that key isn't an fc- one.
+    const wrongKey = provider === 'firecrawl' && !!searchKeySlot().key;
     out.push({
       label: 'web search',
       status: 'warn',
-      detail: `${provider} selected but no ${provider === 'searxng' ? 'server URL' : 'API key'}`,
+      detail: wrongKey
+        ? 'firecrawl selected but the key on file is not a Firecrawl key (they start with fc-)'
+        : `${provider} selected but no ${provider === 'searxng' ? 'server URL' : 'API key'}`,
       hint: 'Artist-news segments can\'t fetch. Configure the selected provider in Settings → Web search: Tavily, Brave and Firecrawl need an API key; SearXNG needs its server URL. Or switch to DuckDuckGo or Keenable (both keyless).',
     });
     return out;

@@ -410,19 +410,39 @@ export function parseKeenableResponse(data: unknown): SearchResponse {
 }
 
 // Firecrawl backend. Keyed via the shared settings.search.apiKey /
-// SEARCH_API_KEY slot (same resolution as Tavily and Brave). Threads optional
-// recency through Firecrawl's `tbs` param (qdr:d/w/m).
+// SEARCH_API_KEY slot (same resolution as Tavily and Brave). The slot may still
+// hold another provider's key, which must not reach Firecrawl, so anything but
+// an `fc-` value is refused here and reads as not ready in searchReady(). Threads
+// optional recency through Firecrawl's `tbs` param (qdr:d/w/m).
 export async function firecrawlSearch(
   query: string,
   recency?: 'day' | 'week' | 'month',
 ): Promise<SearchResponse> {
   const apiKey = searchKeySlot().key;
   if (!apiKey) throw new Error('Firecrawl API key not configured');
+  if (!isFirecrawlKey(apiKey)) throw new Error('The key on file is not a Firecrawl key (they start with fc-)');
   const { url, init } = buildFirecrawlRequest({ query, apiKey, recency });
   const res = await fetchWithTimeout(url, { ...init, timeoutMs: 30_000 });
   if (!res.ok) throw new Error(`Firecrawl HTTP ${res.status}`);
   const data = await res.json();
   return parseFirecrawlResponse(data);
+}
+
+// The one test for "is this a Firecrawl key": firecrawlSearch, searchReady, the
+// admin key probe and firecrawlKeySource all ask it. It matches Firecrawl's own
+// CLI, which refuses any cloud key without the prefix. Their API still accepts a
+// legacy key as a bare UUID, but that key also works as `fc-` + the UUID without
+// its dashes, so nothing valid is locked out.
+export function isFirecrawlKey(key: string): boolean {
+  return key.trim().startsWith('fc-');
+}
+
+// Where the key a Firecrawl search would send comes from, or null when the slot
+// holds none or holds another provider's. GET /settings serves this because the
+// admin only sees a redacted key, and can't tell whose it is.
+export function firecrawlKeySource(): 'settings' | 'env' | null {
+  const { key, source } = searchKeySlot();
+  return isFirecrawlKey(key) ? source : null;
 }
 
 // Pure request builder for a Firecrawl search, exported so endpoint, headers
@@ -492,13 +512,15 @@ export async function searchWeb(
 // True when the active search provider is usable right now.
 //   duckduckgo:   always ready (no key, no URL)
 //   keenable:     always ready (keyless; a key only raises the rate limit)
-//   tavily/brave/firecrawl: needs settings.search.apiKey, or SEARCH_API_KEY env
+//   tavily/brave: needs settings.search.apiKey, or SEARCH_API_KEY env
+//   firecrawl:    the same, and it has to be an fc- key
 //   searxng:      needs settings.search.baseUrl (no env fallback by design)
 export function searchReady(): boolean {
   const s = settings.get().search;
   const provider = s?.provider || 'duckduckgo';
   if (provider === 'duckduckgo' || provider === 'keenable') return true;
   if (provider === 'searxng') return !!(s?.baseUrl && s.baseUrl.trim());
-  // tavily / brave / firecrawl (and any future keyed provider)
+  if (provider === 'firecrawl') return isFirecrawlKey(searchKeySlot().key);
+  // tavily / brave (and any future keyed provider)
   return !!searchKeySlot().key;
 }

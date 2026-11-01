@@ -178,3 +178,11 @@ test('Firecrawl: a key is probed against the free /v2/team/credit-usage; a 401 r
   assert.equal(rejected.ok, false);
   assert.equal(rejected.message, 'Key rejected — check it\'s correct and active');
 });
+
+test("Firecrawl: another provider's key is refused without a request", async (t) => {
+  const outbound = stubProvider(t, 200);
+  const r = await testKey({ key: 'SEARCH_API_KEY', value: 'tvly-left-over', provider: 'firecrawl' });
+  assert.equal(r.ok, false);
+  assert.equal(r.message, 'Not a Firecrawl key (they start with fc-)');
+  assert.equal(outbound.length, 0);
+});

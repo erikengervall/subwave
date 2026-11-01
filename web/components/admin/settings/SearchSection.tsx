@@ -47,6 +47,18 @@ export function groupSearchProviders(ids: readonly string[]): { label: string; i
   ].filter(g => g.ids.length > 0);
 }
 
+// True when a key is on file but Firecrawl searches would refuse it, because it
+// isn't an fc- one. The key reaches this page redacted, so the controller decides
+// through firecrawlKeySource. `undefined` is a controller that doesn't send the
+// field, which says nothing about the key.
+export function firecrawlKeyIsForeign(
+  provider: string,
+  keyOnFile: boolean,
+  source: 'settings' | 'env' | null | undefined,
+): boolean {
+  return provider === 'firecrawl' && keyOnFile && source === null;
+}
+
 interface SearchSectionProps extends SectionProps {
   adminFetch: (path: string, init?: RequestInit) => Promise<Response>;
 }
@@ -107,6 +119,7 @@ export function SearchSection({ data, form, setForm, busy, saveSettings, adminFe
         && ((form.search.baseUrl ?? '') !== (savedSearch.baseUrl || '')
             || (form.search.searxngEngines ?? '') !== (savedSearch.searxngEngines || '')));
   const apiKeySet = form.search.apiKey === 'set' || !!data.env?.SEARCH_API_KEY;
+  const foreignKey = firecrawlKeyIsForeign(provider, apiKeySet, data.search?.firecrawlKeySource);
 
   const testApiKey = async () => {
     const value = form.search.apiKey === 'set' ? '' : form.search.apiKey;
@@ -228,7 +241,13 @@ export function SearchSection({ data, form, setForm, busy, saveSettings, adminFe
               {/* A keyless provider isn't "missing" anything, so skip the red banner,
                   and a key on file may be another provider's, which a prefix-gated
                   provider ignores, so "ready to use" would overclaim. */}
-              {keyed.key !== 'optional' && <KeyStatus envVar="SEARCH_API_KEY" present={apiKeySet} />}
+              {keyed.key !== 'optional' && (
+                <KeyStatus
+                  envVar="SEARCH_API_KEY"
+                  present={apiKeySet && !foreignKey}
+                  detail={foreignKey ? <>The key on file is not a Firecrawl key, so searches won&apos;t run. Firecrawl keys start with <code>fc-</code>: paste one in the field above and save.</> : undefined}
+                />
+              )}
               {/* The controller knows whether the key Keenable would send is a keen_
                   one. A saved key already shows in the field's placeholder, so only
                   an env key needs saying. */}
