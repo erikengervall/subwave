@@ -180,7 +180,16 @@ async function probeKey(
         if (!r.ok) {
           return { ok: false, message: r.status === 401 || r.status === 403 ? 'Key rejected — check it\'s correct and active' : `Request failed (${r.status})` };
         }
-        return { ok: true, message: '✓ Firecrawl key valid' };
+        // A 200 proves the key, not its balance, so the count goes in the message
+        // and a drained key doesn't read as valid. A body without a count stays a
+        // plain pass: the key itself was accepted.
+        const j = await r.json().catch(() => ({})) as { data?: { remainingCredits?: unknown } };
+        const left = j?.data?.remainingCredits;
+        if (typeof left !== 'number' || !Number.isFinite(left)) {
+          return { ok: true, message: '✓ Firecrawl key valid' };
+        }
+        if (left <= 0) return { ok: false, message: 'Firecrawl key valid, but it has no credits left' };
+        return { ok: true, message: `✓ Firecrawl key valid · ${left} credit${left === 1 ? '' : 's'} left` };
       }
       const r = await fetch('https://api.tavily.com/search', {
         method: 'POST',
