@@ -190,7 +190,7 @@ test('doctor says the key on file is the wrong one, and a missing key stays miss
   await settings.update({ search: { provider: 'firecrawl', apiKey: 'tvly-left-over' } });
   const [foreign] = await checkCapabilities(settings.get());
   assert.equal(foreign.status, 'warn');
-  assert.match(foreign.detail, /key on file is not a Firecrawl key/);
+  assert.match(foreign.detail ?? '', /key on file is not a Firecrawl key/);
 
   await settings.update({ search: { apiKey: '' } });
   const [missing] = await checkCapabilities(settings.get());
