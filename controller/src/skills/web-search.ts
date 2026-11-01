@@ -410,6 +410,8 @@ export function parseKeenableResponse(data: unknown): SearchResponse {
   return { answer: '', results };
 }
 
+const FOREIGN_FIRECRAWL_KEY = 'The key on file is not a Firecrawl key (they start with fc-)';
+
 // Firecrawl backend. Keyed via the shared settings.search.apiKey /
 // SEARCH_API_KEY slot (same resolution as Tavily and Brave). The slot may still
 // hold another provider's key, which must not reach Firecrawl, so anything but
@@ -421,7 +423,7 @@ export async function firecrawlSearch(
 ): Promise<SearchResponse> {
   const apiKey = searchKeySlot().key;
   if (!apiKey) throw new Error('Firecrawl API key not configured');
-  if (!isFirecrawlKey(apiKey)) throw new Error('The key on file is not a Firecrawl key (they start with fc-)');
+  if (!isFirecrawlKey(apiKey)) throw new Error(FOREIGN_FIRECRAWL_KEY);
   const { url, init } = buildFirecrawlRequest({ query, apiKey, recency });
   const res = await fetchWithTimeout(url, { ...init, timeoutMs: 30_000 });
   if (!res.ok) throw new Error(`Firecrawl HTTP ${res.status}`);
@@ -430,10 +432,10 @@ export async function firecrawlSearch(
 }
 
 // The one test for "is this a Firecrawl key": firecrawlSearch, searchReady, the
-// admin key probe and firecrawlKeySource all ask it. It matches Firecrawl's own
-// CLI, which refuses any cloud key without the prefix. Their API still accepts a
-// legacy key as a bare UUID, but that key also works as `fc-` + the UUID without
-// its dashes, so nothing valid is locked out.
+// admin key probe, firecrawlKeySource and searchKeyProblem all ask it. It matches
+// Firecrawl's own CLI, which refuses any cloud key without the prefix. Their API
+// still accepts a legacy key as a bare UUID, but that key also works as `fc-` +
+// the UUID without its dashes, so nothing valid is locked out.
 export function isFirecrawlKey(key: string): boolean {
   return key.trim().startsWith('fc-');
 }
@@ -444,6 +446,15 @@ export function isFirecrawlKey(key: string): boolean {
 export function firecrawlKeySource(): 'settings' | 'env' | null {
   const { key, source } = searchKeySlot();
   return isFirecrawlKey(key) ? source : null;
+}
+
+// Why the selected provider refuses the key on file, or null when it doesn't.
+// No key at all is null too: that one keeps its own "set a key" wording, which
+// can't fix this state, because a saved key shadows SEARCH_API_KEY.
+export function searchKeyProblem(): string | null {
+  if (settings.get().search?.provider !== 'firecrawl') return null;
+  const { key } = searchKeySlot();
+  return key && !isFirecrawlKey(key) ? FOREIGN_FIRECRAWL_KEY : null;
 }
 
 // Pure request builder for a Firecrawl search, exported so endpoint, headers
