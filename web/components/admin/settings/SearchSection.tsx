@@ -238,9 +238,9 @@ export function SearchSection({ data, form, setForm, busy, saveSettings, adminFe
                   one or the other, not both.
                 </div>
               </div>
-              {/* A keyless provider isn't "missing" anything, so skip the red banner,
-                  and a key on file may be another provider's, which a prefix-gated
-                  provider ignores, so "ready to use" would overclaim. */}
+              {/* A keyless provider isn't "missing" anything, so skip the red banner.
+                  A key on file may be another provider's, which Firecrawl refuses, so
+                  "ready to use" would overclaim and the banner names the wrong key. */}
               {keyed.key !== 'optional' && (
                 <KeyStatus
                   envVar="SEARCH_API_KEY"
